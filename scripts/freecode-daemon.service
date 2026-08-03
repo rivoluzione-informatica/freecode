@@ -1,0 +1,68 @@
+# FreeCode daemon — systemd USER unit (the Linux twin of scripts/org.freecoders.freecode-daemon.plist).
+#
+# A user unit, not a system one, on purpose: the daemon edits files in your workspace as you, reads
+# ~/.freecode, and binds loopback only. Nothing about it wants root.
+#
+# Install (__FREECODE_REPO__ is a placeholder so this file carries no developer's absolute paths):
+#
+#   mkdir -p ~/.config/systemd/user
+#   sed "s|__FREECODE_REPO__|$(pwd)|g" scripts/freecode-daemon.service \
+#       > ~/.config/systemd/user/freecode-daemon.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now freecode-daemon
+#
+#   systemctl --user status freecode-daemon      # state
+#   journalctl --user -u freecode-daemon -f      # logs, including [safety] and [llm-retry] lines
+#   systemctl --user restart freecode-daemon     # after `cargo build --release`
+#
+# Survive logout (otherwise the unit stops when your session ends):
+#   sudo loginctl enable-linger "$USER"
+
+[Unit]
+Description=FreeCode daemon (local coding agent, loopback only)
+Documentation=https://github.com/rivoluzione-informatica/freecode
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=__FREECODE_REPO__/target/release/freecode-daemon
+WorkingDirectory=__FREECODE_REPO__
+
+# Points at the RELEASE binary deliberately: `cargo test` does not rebuild it, so a test run
+# cannot swap the running daemon underneath you.
+
+Restart=on-failure
+RestartSec=2s
+# Do NOT use Restart=always. The macOS LaunchAgent uses KeepAlive=true and it makes testing
+# genuinely confusing — every manual kill is undone within a second, and a hand-started daemon
+# then dies with "Address already in use" while launchd's copy keeps serving. on-failure restarts
+# real crashes and leaves deliberate stops alone.
+
+# stdout/stderr go to the journal; there is no log file to rotate.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=freecode-daemon
+
+# Hardening. The daemon writes to the open workspace, ~/.freecode and the state directory, and
+# talks to loopback. It needs nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-write
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# ProtectSystem=strict makes /usr and /etc read-only; the workspace lives under $HOME, which
+# ProtectHome=read-write keeps writable. If you keep code outside $HOME, add:
+#   ReadWritePaths=/path/to/your/code
+
+# Routing telemetry follows the XDG state convention on Linux; override if you want it elsewhere.
+# Environment=FREECODE_ROUTE_LOG=%S/freecode/route.jsonl
+
+[Install]
+WantedBy=default.target

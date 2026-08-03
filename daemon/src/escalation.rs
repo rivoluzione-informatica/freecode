@@ -49,8 +49,41 @@ pub fn log_route(outcome: &str, retry_count: usize, max_retries: usize, safety_b
 
 /// PIC-2 — persist the route decision to an append-only JSONL so the "uncertain→escalate" band is
 /// MEASURABLE (the telemetry println goes to stdout, which is dropped when the daemon runs detached).
-/// Best-effort: never panics, never blocks a turn on a write failure. Path: $FREECODE_ROUTE_LOG, else
-/// ~/Library/Logs/freecode-route.jsonl.
+/// Best-effort: never panics, never blocks a turn on a write failure. See [`route_log_path`] for
+/// where it lands.
+/// Where the routing JSONL lands, in precedence order:
+///
+/// 1. `$FREECODE_ROUTE_LOG` — always wins, on every platform.
+/// 2. macOS: `~/Library/Logs/freecode-route.jsonl`, the platform's own convention.
+/// 3. Elsewhere: `$XDG_STATE_HOME/freecode/route.jsonl`, falling back to
+///    `~/.local/state/freecode/route.jsonl`. State, not cache and not config — it is machine-local
+///    history that should survive a reboot but means nothing on another machine.
+/// 4. No home at all (a container without `$HOME`): `/tmp`, so telemetry never takes a turn down.
+///
+/// This used to hardcode the macOS path unconditionally, which on Linux created a `~/Library`
+/// directory that belongs to no convention there.
+pub fn route_log_path() -> String {
+    if let Ok(explicit) = std::env::var("FREECODE_ROUTE_LOG") {
+        if !explicit.trim().is_empty() {
+            return explicit;
+        }
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if home.is_empty() {
+        return "/tmp/freecode-route.jsonl".to_string();
+    }
+    if cfg!(target_os = "macos") {
+        return format!("{home}/Library/Logs/freecode-route.jsonl");
+    }
+    let state = std::env::var("XDG_STATE_HOME")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("{home}/.local/state"));
+    format!("{state}/freecode/route.jsonl")
+}
+
 fn persist_route(outcome: &str, route_str: &str, retry_count: usize, max_retries: usize, safety_blocks: usize, session_id: &str) {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -60,10 +93,7 @@ fn persist_route(outcome: &str, route_str: &str, retry_count: usize, max_retries
         "ts": ts, "kind": "rfc004-route", "outcome": outcome, "would_route": route_str,
         "retries": retry_count, "max_retries": max_retries, "safety_blocks": safety_blocks, "session": session_id,
     });
-    let path = std::env::var("FREECODE_ROUTE_LOG").unwrap_or_else(|_| {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        format!("{home}/Library/Logs/freecode-route.jsonl")
-    });
+    let path = route_log_path();
     if let Some(parent) = std::path::Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -92,5 +122,49 @@ mod tests {
         assert!(body.contains("\"would_route\":\"n/a\""), "infra outcome -> n/a; got: {body}");
         assert_eq!(body.lines().count(), 3, "one JSONL record per turn");
         let _ = std::fs::remove_file(&p);
+    }
+
+    /// An explicit override wins everywhere — it is the escape hatch for containers, CI, and
+    /// anyone whose home layout we did not anticipate.
+    #[test]
+    fn explicit_env_var_always_wins() {
+        std::env::set_var("FREECODE_ROUTE_LOG", "/somewhere/explicit.jsonl");
+        assert_eq!(route_log_path(), "/somewhere/explicit.jsonl");
+        std::env::remove_var("FREECODE_ROUTE_LOG");
+    }
+
+    /// An empty override is a mistake, not an instruction to write to "".
+    #[test]
+    fn empty_env_var_falls_through_to_the_default() {
+        std::env::set_var("FREECODE_ROUTE_LOG", "   ");
+        let p = route_log_path();
+        assert!(!p.trim().is_empty(), "empty override produced an empty path");
+        assert!(p.ends_with(".jsonl"), "unexpected default: {p}");
+        std::env::remove_var("FREECODE_ROUTE_LOG");
+    }
+
+    /// Regression: this used to hardcode `~/Library/Logs` on every platform, creating a directory
+    /// on Linux that belongs to no convention there.
+    #[test]
+    fn default_path_follows_the_platform() {
+        std::env::remove_var("FREECODE_ROUTE_LOG");
+        let p = route_log_path();
+        if cfg!(target_os = "macos") {
+            assert!(p.contains("/Library/Logs/"), "macOS should use Library/Logs: {p}");
+        } else {
+            assert!(!p.contains("/Library/"), "non-macOS must not invent ~/Library: {p}");
+            assert!(p.contains("/freecode/"), "should be namespaced under freecode/: {p}");
+        }
+    }
+
+    #[test]
+    fn xdg_state_home_is_honoured_off_macos() {
+        if cfg!(target_os = "macos") {
+            return; // macOS has its own convention and does not consult XDG
+        }
+        std::env::remove_var("FREECODE_ROUTE_LOG");
+        std::env::set_var("XDG_STATE_HOME", "/xdg/state");
+        assert_eq!(route_log_path(), "/xdg/state/freecode/route.jsonl");
+        std::env::remove_var("XDG_STATE_HOME");
     }
 }

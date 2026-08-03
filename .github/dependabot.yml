@@ -1,0 +1,43 @@
+# Dependency updates.
+#
+# Grouped and monthly on purpose: this project has a small, deliberate dependency surface, and a
+# PR per patch bump would train everyone to merge without reading. Security updates are NOT
+# governed by this file — GitHub raises those immediately regardless of schedule.
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      rust-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: npm
+    directory: /vscode-plugin
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # esbuild majors are held deliberately. The open advisory concerns `esbuild serve`, which
+      # this project never runs — it only calls esbuild.build()/buildSync(). A major bump on the
+      # bundler is a real regression risk for zero security gain; revisit when the advisory
+      # touches the build path.
+      - dependency-name: esbuild
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"

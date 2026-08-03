@@ -1,0 +1,163 @@
+# Build a release: prebuilt daemon + CLI binaries, and the packaged extension.
+#
+# The point is the first run. Shipping only the .vsix would change nothing — the extension is
+# useless without the daemon, and building the daemon means installing Rust and protoc first.
+# Attaching binaries removes both from the path of anyone who just wants to try it.
+#
+#   git tag v0.1.4 && git push origin v0.1.4
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      # tonic-build shells out to protoc; without it both build.rs files fail.
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build (locked)
+        run: cargo build --release --locked --target ${{ matrix.target }} -p freecode-daemon -p freecode-cli
+
+      # The binaries are the artefact people run — prove they at least start and answer before
+      # publishing them. `doctor` exits non-zero when something required is missing, and on a
+      # CI runner there is no LLM endpoint, so only assert that it RAN and produced its report.
+      - name: Smoke-test the artefacts
+        shell: bash
+        run: |
+          BIN="target/${{ matrix.target }}/release"
+          "$BIN/freecode-cli" --version
+          "$BIN/freecode-cli" doctor --json > /tmp/doctor.json || true
+          python3 -c "import json;d=json.load(open('/tmp/doctor.json'));print('doctor produced',len(d['checks']),'checks')"
+          test -x "$BIN/freecode-daemon"
+
+      - name: Package
+        shell: bash
+        run: |
+          NAME="freecode-${{ matrix.target }}"
+          mkdir -p "dist/$NAME"
+          cp "target/${{ matrix.target }}/release/freecode-daemon" "dist/$NAME/"
+          cp "target/${{ matrix.target }}/release/freecode-cli" "dist/$NAME/"
+          cp README.md LICENSE "dist/$NAME/"
+          tar -C dist -czf "$NAME.tar.gz" "$NAME"
+          shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            *.tar.gz
+            *.tar.gz.sha256
+
+  extension:
+    name: vsix
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode-plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: vscode-plugin/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      # --no-dependencies: the bundle is self-contained (esbuild inlines everything), so vsce
+      # must not try to resolve node_modules into the package.
+      - name: Package the extension
+        run: |
+          npx --yes @vscode/vsce@latest package --no-dependencies --out ../freecode-vscode.vsix
+          cd .. && shasum -a 256 freecode-vscode.vsix > freecode-vscode.vsix.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: |
+            freecode-vscode.vsix
+            freecode-vscode.vsix.sha256
+
+  publish:
+    needs: [binaries, extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect checksums
+        run: |
+          cd artifacts
+          cat *.sha256 > SHA256SUMS
+          rm -f *.sha256
+          ls -la
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" artifacts/* \
+            --title "FreeCode $TAG" \
+            --generate-notes \
+            --notes "
+          ## Install
+
+          **Extension** — download \`freecode-vscode.vsix\`, then:
+          \`\`\`
+          code --install-extension freecode-vscode.vsix
+          \`\`\`
+
+          **Daemon** — download the archive for your platform, then:
+          \`\`\`
+          tar xzf freecode-<target>.tar.gz && cd freecode-<target>
+          ./freecode-cli doctor          # says what is missing, if anything
+          ./freecode-daemon &            # binds 127.0.0.1:50051, loopback only
+          \`\`\`
+
+          You still need a local OpenAI-compatible LLM server on \`127.0.0.1:1234\`
+          (LM Studio, llama.cpp \`--server\`, Ollama). \`doctor\` checks for it and names the fix.
+
+          Verify downloads against \`SHA256SUMS\`."

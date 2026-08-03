@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 use freecode_pb::freecode_service_client::FreecodeServiceClient;
 use freecode_pb::{IntentRequest, PingRequest};
 
+mod doctor;
+
 const DAEMON_ADDR: &str = "http://127.0.0.1:50051";
 
 pub mod freecode_pb {
@@ -20,6 +22,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Check that everything FreeCode needs is present, and name the fix for whatever isn't
+    Doctor {
+        /// Workspace to check (defaults to the current directory)
+        #[arg(short, long, default_value = ".")]
+        workspace: String,
+        /// LLM endpoint to probe
+        #[arg(long, default_value = doctor::DEFAULT_LLM)]
+        endpoint: String,
+        /// Machine-readable output
+        #[arg(long)]
+        json: bool,
+    },
     /// Ping the daemon to check if it's running
     Ping,
     /// Send an intent to the AI
@@ -48,6 +62,12 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    // `doctor` must run BEFORE any connection attempt: diagnosing a daemon that is not there is
+    // precisely its job, so it cannot depend on reaching one.
+    if let Commands::Doctor { workspace, endpoint, json } = &cli.command {
+        std::process::exit(doctor::run(workspace, DAEMON_ADDR, endpoint, *json));
+    }
+
     // A bare transport error ("tcp connect error") tells the operator nothing actionable.
     let mut client = match FreecodeServiceClient::connect(DAEMON_ADDR).await {
         Ok(c) => c,
@@ -61,6 +81,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match &cli.command {
+        // Handled above, before the daemon connection.
+        Commands::Doctor { .. } => unreachable!("doctor exits before this point"),
         Commands::Ping => {
             let request = tonic::Request::new(PingRequest {});
             let response = client.ping(request).await?;

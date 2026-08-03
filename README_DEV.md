@@ -104,6 +104,10 @@ Modes (in the panel): **SUGGEST** (=hitl, stages proposals you Accept/Discard) �
 through the gates) · **CHAT** (read-only).
 
 ## 7. Gotchas / current state
+- **Linux**: use `scripts/freecode-daemon.service` (systemd *user* unit, not system — the daemon
+  runs as you and binds loopback). Install with the `sed` one-liner in its header; logs go to
+  `journalctl --user -u freecode-daemon -f`. It uses `Restart=on-failure`, NOT `always`, precisely
+  to avoid the launchd behaviour described next.
 - **launchd works — and it fights you.** (This entry used to say launchd was WEDGED; verified
   2026-08-03 that it is not.) The agent has `KeepAlive=true`, so it respawns the daemon within ~1s of
   any `kill`/`pkill`. Consequences when testing: (a) your hand-started daemon dies with `AddrInUse` and

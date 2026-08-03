@@ -39,10 +39,15 @@ sudo apt-get install -y protobuf-compiler   # Debian/Ubuntu
 
 ```bash
 cargo build --release -p freecode-daemon
+./target/release/freecode-cli doctor          # says what is missing, and the command that fixes it
 ./target/release/freecode-daemon &            # binds 127.0.0.1:50051, loopback only
 
 cd vscode-plugin && npm ci && node esbuild.js
 ```
+
+Prebuilt binaries and a packaged `.vsix` are attached to each
+[release](https://github.com/rivoluzione-informatica/freecode/releases), if you would rather not
+build from source.
 
 Then open the **FreeCode** panel in VS Code and run `Developer: Reload Window`.
 
@@ -76,10 +81,13 @@ directly:
 |---|---|
 | `FREECODE_TIMING` | Set to anything to print per-phase timings |
 | `FREECODE_ROUTE_LOG` | Path for the router telemetry JSONL (default `$HOME/.freecode/…`) |
-| `FREECODE_T1_ENDPOINT` | Endpoint for the optional T1 fast-path model |
-| `FREECODE_T1_MODEL` | Model id for the T1 fast-path |
 
-Gate toggles in `.freecode/config.json` (all default ON except where noted):
+(`FREECODE_T1_ENDPOINT` and friends appear in `daemon/src/t1.rs` but belong to its ignored
+benchmark tests — the T1 fast-path is configured through `t1_endpoint` / `t1_model` in
+`.freecode/config.json`, not the environment.)
+
+Full reference: **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — every key, every default,
+read out of the source. Gate toggles in `.freecode/config.json` (all default ON except where noted):
 
 | Key | Effect |
 |---|---|
@@ -117,9 +125,18 @@ worth nothing.
   (`style-src` still allows inline styles: the markup relies on them, they cannot execute code,
   and the CSS-exfiltration vector is closed by `img-src`/`default-src`.)
 
-## Development
+## Documentation
 
-See [README_DEV.md](README_DEV.md) for the dev loop, the launchd service, and the gotchas.
+| | |
+|---|---|
+| [Extension guide](vscode-plugin/README.md) | Install, the three modes, the panel, the gates — start here as a user |
+| [Configuration](docs/CONFIGURATION.md) | Every setting, default and environment variable |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | What each refusal means and how to clear it |
+| [Security policy](SECURITY.md) | Threat model, what is and is not defended, reporting |
+| [README_DEV.md](README_DEV.md) | Dev loop, service install, gotchas |
+| [docs/rfc-00*.md](docs/) | Why the design is what it is |
+
+## Development
 
 ```bash
 cargo test --workspace                     # 119 tests
