@@ -1,0 +1,17 @@
+{
+  // F5 dev loop: runs the extension from source dist/ in an Extension Development
+  // Host — no vsix repackage/reinstall needed. After a code change, rebuild
+  // (the preLaunchTask) and Reload Window in the dev-host. Assumes this workspace
+  // root is .../picocoder/freecode (the folder that contains vscode-plugin/).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run FreeCode Extension (dev host)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/vscode-plugin"],
+      "outFiles": ["${workspaceFolder}/vscode-plugin/dist/**/*.js"],
+      "preLaunchTask": "freecode: build extension"
+    }
+  ]
+}

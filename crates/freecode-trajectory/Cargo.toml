@@ -1,0 +1,13 @@
+[package]
+name = "freecode-trajectory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Read-only importer that normalizes coding-agent session transcripts into trajectories (RFC-005 Slice 0)."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+freecode-classify = { path = "../freecode-classify" }

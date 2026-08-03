@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package freecode;
+
+// The core daemon service
+service FreecodeService {
+  // Check daemon status
+  rpc Ping (PingRequest) returns (PingResponse);
+
+  // Send an intent to the AI agent
+  rpc DispatchIntent (IntentRequest) returns (stream IntentResponse);
+
+  // AST-aware file manipulation
+  rpc ApplyAstEdit (AstEditRequest) returns (AstEditResponse);
+
+  // Query git repository status
+  rpc GetGitStatus (GitStatusRequest) returns (GitStatusResponse);
+}
+
+message PingRequest {}
+message PingResponse {
+  string version = 1;
+  string status = 2;
+}
+
+message IntentRequest {
+  string prompt = 1;
+  string workspace_path = 2;
+  // chat, hitl, auto
+  string mode = 3;
+  string session_id = 4;
+  string llm_endpoint = 5;
+  string llm_model = 6;
+  // RFC-002 Slice 2: when set, this is a human-APPROVED `run` command being re-dispatched for
+  // execution (HITL Accept). The daemon skips the LLM/agent loop, RE-VALIDATES the command
+  // (re-classify; require global enable_run), and executes it. Empty for normal intents.
+  string approved_command = 7;
+  // RFC-006 T1: the IDE-selected code span to edit (the `before`). When set with `file` and
+  // the T1 fast-path is enabled, a small local model proposes the edit, the gates validate it,
+  // and it ships or escalates to T2. Empty for normal intents.
+  string selection = 8;
+  // RFC-006 T1: workspace-relative path of the file the `selection` came from.
+  string file = 9;
+}
+
+message IntentResponse {
+  string status = 1;
+  string message = 2;
+  string session_id = 3;
+}
+
+message AstEditRequest {
+  string file_path = 1;
+  string symbol_name = 2; // e.g. "calculate_tax"
+  string new_content = 3;
+}
+
+message AstEditResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GitStatusRequest {
+  string workspace_path = 1;
+}
+
+message GitStatusResponse {
+  bool is_inside_repo = 1;
+  string branch = 2;
+  repeated string modified_files = 3;
+  repeated string added_files = 4;
+  repeated string deleted_files = 5;
+}

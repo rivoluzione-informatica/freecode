@@ -1,0 +1,34 @@
+# Build artifacts
+target/
+node_modules/
+dist/
+out/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.vsix
+*.log
+
+# Secrets & credentials — never committed. (`.env.example` is the tracked template.)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_ed25519
+.npmrc
+.netrc
+
+# Agent/tool local state (machine-specific; was only covered by a personal global ignore)
+.claude/settings.local.json
+
+# Local-only config & state (per-machine; never committed)
+.freecode/
+
+# Local reference material (arXiv PDFs mined for the gate/measurement roadmap)
+docs-harness/

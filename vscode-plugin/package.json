@@ -1,0 +1,72 @@
+{
+  "name": "freecode-vscode",
+  "displayName": "FreeCode",
+  "description": "VS Code integration for the FreeCode Daemon AI assistant",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rivoluzione-informatica/freecode.git"
+  },
+  "author": {
+    "name": "Fabrizio Salmi",
+    "email": "fabrizio.salmi@gmail.com"
+  },
+  "license": "MIT",
+  "version": "0.1.4",
+  "publisher": "freecode",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "freecode-sidebar",
+          "title": "FreeCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "freecode-sidebar": [
+        {
+          "id": "freecode.assistantView",
+          "type": "webview",
+          "name": "FreeCode Assistant"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "freecode.ping",
+        "title": "FreeCode: Ping Daemon"
+      },
+      {
+        "command": "freecode.ask",
+        "title": "FreeCode: Dispatch Intent"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.js --minify",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc -p ./ --noEmit",
+    "test": "node --test test/*.test.js",
+    "build": "node esbuild.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.9.14",
+    "@grpc/proto-loader": "^0.7.10"
+  },
+  "devDependencies": {
+    "@types/node": "^18.16.19",
+    "@types/vscode": "^1.80.0",
+    "esbuild": "^0.18.11",
+    "typescript": "^5.1.3"
+  }
+}

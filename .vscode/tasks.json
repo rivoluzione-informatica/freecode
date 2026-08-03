@@ -1,0 +1,25 @@
+{
+  // Build tasks for the F5 dev loop (see launch.json). "build extension" runs
+  // esbuild + the webview JS syntax guard once (used as preLaunchTask).
+  // "watch extension" rebuilds on save — note: watch mode skips the syntax guard,
+  // so run a one-off "build extension" before packaging.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "freecode: build extension",
+      "type": "shell",
+      "command": "node esbuild.js",
+      "options": { "cwd": "${workspaceFolder}/vscode-plugin" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "freecode: watch extension",
+      "type": "shell",
+      "command": "node esbuild.js --watch",
+      "options": { "cwd": "${workspaceFolder}/vscode-plugin" },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# Keep the results/ directory but ignore generated runs by default.
+quick_bench_*.json

@@ -1,0 +1,16 @@
+[package]
+name = "freecode-compress"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Deterministic context compression for freecode (RFC-003)."
+
+[dependencies]
+# The build-log noise reduction (collapse repeats, squeeze blanks, collapse diff context) used
+# to be reimplemented here. It is the same job l0-compressor already does, with 73 tests behind
+# it, so we consume those filters instead of keeping two implementations drifting apart.
+# Pinned to a revision: this is a git dependency, and an unpinned branch would make builds
+# non-reproducible. Bump the rev deliberately when l0-compressor improves.
+l0-compressor = { git = "https://github.com/fabriziosalmi/l0-compressor", rev = "4c26a5273f128cd97d96dfff688fa4d1bd52f7cf" }

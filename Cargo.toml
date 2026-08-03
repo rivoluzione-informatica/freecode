@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "daemon",
+    "cli",
+    "crates/freecode-classify",
+    "crates/freecode-compress",
+    "crates/freecode-trajectory",
+    "crates/freecode-verdict"
+]
+resolver = "2"
+
+# Declared once and inherited by every member (`license.workspace = true`, ...). Four crates
+# used to say Apache-2.0 while the repo's LICENSE said MIT, and daemon/cli declared nothing —
+# inheritance makes that class of drift impossible.
+[workspace.package]
+version = "0.1.3"
+edition = "2021"
+license = "MIT"
+authors = ["Fabrizio Salmi <fabrizio.salmi@gmail.com>"]
+repository = "https://github.com/rivoluzione-informatica/freecode"

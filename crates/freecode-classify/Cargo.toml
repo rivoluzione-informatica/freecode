@@ -1,0 +1,8 @@
+[package]
+name = "freecode-classify"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Deterministic, dependency-free task classifier (RFC-004) — shared by the daemon's escalation ladder and the offline trajectory tooling so the live router and the training labels agree."

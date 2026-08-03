@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FreeCode daemon LaunchAgent (versioned template).
+
+  This is a TEMPLATE: __FREECODE_REPO__ and __HOME__ are placeholders, so the file stays
+  portable and carries no developer's absolute paths.
+
+  Install (substitutes both placeholders for your checkout):
+    sed -e "s|__FREECODE_REPO__|$(pwd)|g" -e "s|__HOME__|$HOME|g" \
+        scripts/org.freecoders.freecode-daemon.plist \
+        > ~/Library/LaunchAgents/org.freecoders.freecode-daemon.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.freecoders.freecode-daemon.plist
+
+  Update after a rebuild:
+    make daemon      # cargo build --release + launchctl kickstart -k
+
+  Note: points at the RELEASE binary (stable, fast) — `cargo clean` of debug won't kill it, and
+  it's not rebuilt by `cargo test`.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.freecoders.freecode-daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__FREECODE_REPO__/target/release/freecode-daemon</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__FREECODE_REPO__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/freecode-daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/freecode-daemon.err.log</string>
+</dict>
+</plist>

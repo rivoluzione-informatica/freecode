@@ -1,0 +1,8 @@
+[package]
+name = "freecode-verdict"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Deterministic verdict spine for an edit/turn: a hard AND-chain with a typed firewall — a Veto can never be outvoted or summed. Soft belief aggregation (RFC-004) is deferred behind this firewall."
