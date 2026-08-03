@@ -2,8 +2,14 @@ const esbuild = require("esbuild");
 const fs = require("fs");
 const path = require("path");
 
+// The extension's own version, injected as a compile-time constant. Reading it with
+// `require("../package.json")` instead makes esbuild follow that manifest's `main` field —
+// which points at this build's OUTPUT — and the bundle never finishes.
+const pkgVersion = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version;
+
 const baseConfig = {
   entryPoints: ["./src/extension.ts"],
+  define: { __EXTENSION_VERSION__: JSON.stringify(pkgVersion) },
   bundle: true,
   outfile: "./dist/extension.js",
   external: ["vscode"],

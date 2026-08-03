@@ -415,15 +415,53 @@ mod tests {
     }
 
     /// Every check must name a fix when it reports a problem — a diagnostic that says only
-    /// "missing" moves the work to the reader.
+    /// "missing" moves the work back to the reader.
+    ///
+    /// This drives the REAL checks into failure rather than constructing `Check`s by hand: the
+    /// previous version handed a fix to a constructor and then asserted the constructor had kept
+    /// it, which is a tautology — a genuine check could report a problem with no fix and it
+    /// stayed green.
+    ///
+    /// Scoped to `Missing`. A `Warn` may legitimately carry no fix when it is informational
+    /// rather than a problem (`check_workspace` says "no .freecode/config.json — gate defaults
+    /// apply", which needs no action), and pretending otherwise would force a fake remedy.
     #[test]
-    fn problems_always_carry_a_fix() {
-        let cases = [
-            Check::missing("x", "d", "do this"),
-            Check::warn("y", "d", "do that"),
+    fn every_missing_check_names_a_fix() {
+        let failing = [
+            check_workspace("/definitely/not/a/real/path/xyz"),
+            // Port 1 is reserved; nothing is ever listening there.
+            check_llm("http://127.0.0.1:1/v1/chat/completions"),
         ];
-        for c in cases {
-            assert!(!c.fix.is_empty(), "{} reported a problem with no fix", c.name);
+        let mut seen_missing = 0;
+        for c in &failing {
+            if c.status == Status::Missing {
+                seen_missing += 1;
+                assert!(
+                    !c.fix.is_empty(),
+                    "check '{}' reported Missing with no fix: {}",
+                    c.name,
+                    c.detail
+                );
+                assert!(!c.detail.is_empty(), "check '{}' reported Missing with no detail", c.name);
+            }
+        }
+        assert_eq!(seen_missing, failing.len(), "a check that should have failed did not");
+    }
+
+    /// A required tool that is genuinely absent must report Missing WITH a fix, not merely
+    /// mention it. `protoc` is the one that historically wasted the most time when missing.
+    #[test]
+    fn a_required_tool_reports_its_install_command() {
+        let c = check_protoc();
+        if c.status == Status::Missing {
+            assert!(
+                c.fix.contains("install") || c.fix.contains("brew") || c.fix.contains("apt"),
+                "protoc missing but the fix names no install command: {}",
+                c.fix
+            );
+        } else {
+            // Present here, so assert the other half of the contract instead.
+            assert!(c.fix.is_empty(), "a passing check must carry no fix");
         }
     }
 

@@ -65,7 +65,11 @@ impl FreecodeService for FreecodeCore {
         _request: Request<PingRequest>,
     ) -> Result<Response<PingResponse>, Status> {
         Ok(Response::new(PingResponse {
-            version: "0.1.0".into(),
+            // The crate's real version, not a literal. This used to be a hardcoded "0.1.0" that
+            // tracked nothing: the daemon had been through four releases still announcing the
+            // first. A version string that lies is worse than no version string, because the
+            // extension now compares against it to detect a mismatched pair.
+            version: env!("CARGO_PKG_VERSION").into(),
             status: "Ready and waiting for strict AST instructions.".into(),
         }))
     }

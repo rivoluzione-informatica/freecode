@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import { getWebviewCss } from './webview/style';
 import { getWebviewJs } from './webview/client';
 import { getWebviewHtml } from './webview/markup';
+import { describeVersionSkew } from './version';
 
 /** Single source of truth for the "daemon not reachable" guidance (reused by the ping/test path
  *  and the dispatch error path) so a transport failure never leaks a raw grpc-js string. */
@@ -30,6 +31,8 @@ export class FreecodeAssistantViewProvider implements vscode.WebviewViewProvider
     private client: FreecodeClient;
     private sessionId: string;
     private activeCall: any = null;
+    /** Last skew message shown, so a polled check does not repeat it every few seconds. */
+    private lastReportedSkew: string | null = null;
     private pendingHitlResolver: ((result: { choice: 'Accept' | 'Discard'; edits?: Record<string, string> }) => void) | null = null;
 
     constructor(
@@ -210,10 +213,11 @@ export class FreecodeAssistantViewProvider implements vscode.WebviewViewProvider
                 case 'ping': {
                     try {
                         const res = await this.client.ping();
+                        const skew = describeVersionSkew(res.version);
                         webviewView.webview.postMessage({
                             type: 'step',
-                            status: 'success',
-                            message: `Connected to daemon. Version: ${res.version}`
+                            status: skew ? 'error' : 'success',
+                            message: skew ?? `Connected to daemon. Version: ${res.version}`
                         });
                         webviewView.webview.postMessage({
                             type: 'connectionStatus',
@@ -684,7 +688,18 @@ export class FreecodeAssistantViewProvider implements vscode.WebviewViewProvider
                 }
                 case 'checkConnection': {
                     try {
-                        await this.client.ping();
+                        const res = await this.client.ping();
+                        // This runs on a timer, so it is the path that will actually notice a
+                        // daemon swapped underneath a running window. Surface the skew once —
+                        // repeating it every poll would be noise, so it goes to a notification
+                        // the user dismisses rather than into the panel's step stream.
+                        const skew = describeVersionSkew(res.version);
+                        if (skew && skew !== this.lastReportedSkew) {
+                            this.lastReportedSkew = skew;
+                            vscode.window.showWarningMessage(skew);
+                        } else if (!skew) {
+                            this.lastReportedSkew = null;
+                        }
                         webviewView.webview.postMessage({
                             type: 'connectionStatus',
                             connected: true

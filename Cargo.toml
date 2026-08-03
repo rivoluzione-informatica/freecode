@@ -13,7 +13,7 @@ resolver = "2"
 # used to say Apache-2.0 while the repo's LICENSE said MIT, and daemon/cli declared nothing —
 # inheritance makes that class of drift impossible.
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
 authors = ["Fabrizio Salmi <fabrizio.salmi@gmail.com>"]
