@@ -136,6 +136,7 @@ through the gates) · **CHAT** (read-only).
   matter are the NEGATIVE ones — additions, private items, reformatting and param renames must
   stay silent, or nobody keeps the gate on.
 - **Route telemetry** (RFC-004): each turn appends a line to `~/Library/Logs/freecode-route.jsonl`
+  on macOS, `$XDG_STATE_HOME/freecode/route.jsonl` (else `~/.local/state/…`) elsewhere
   (`$FREECODE_ROUTE_LOG` to override) — `would_route ∈ {ship, retry-same-tier, escalate-to-T2}`. Drives
   nothing yet; it measures the escalate band.
 - **Datasets** (RFC-005): regenerate from your local Claude Code corpus. The corpus is yours and

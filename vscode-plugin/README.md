@@ -28,6 +28,10 @@ tar xzf freecode-<your-platform>.tar.gz && cd freecode-<your-platform>
 ./freecode-daemon &        # binds 127.0.0.1 only
 ```
 
+**The two halves ship as a pair.** The extension and the daemon speak one gRPC contract and are
+versioned in lockstep, so install them from the same release. If they disagree the panel says so
+on connect — that warning is not cosmetic, a mismatched pair can fail in ways that look like a bug.
+
 `doctor` is the fastest way to find out why something is not working. It checks the toolchain,
 `protoc`, Node, the workspace, the daemon and the LLM endpoint, and prints the fix for each
 problem. It exits non-zero when something required is missing, so it works in scripts too.
@@ -132,6 +136,7 @@ Run `freecode-cli doctor` first — it answers most of it.
 |---|---|
 | Status dot stays red | The daemon is not running. Start it, then click the dot |
 | Turn never answers | No model loaded in your LLM server. `doctor` shows the loaded models |
+| "Version mismatch: extension X, daemon Y" | The two halves are from different releases. Rebuild the daemon, or install the extension from the matching release |
 | "cannot find protoc" while building | `brew install protobuf` / `apt-get install protobuf-compiler` |
 | Auto mode refuses to run a command | Auto only executes inside the container boundary. Use Suggest, or build the sandbox image |
 | Panel controls do nothing | Reload the window (`Developer: Reload Window`) after rebuilding the extension |

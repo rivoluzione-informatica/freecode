@@ -36,6 +36,26 @@ out of memory — check its own log.
 
 ---
 
+## "Version mismatch: extension X, daemon Y"
+
+The extension and the daemon are separate programs that speak one gRPC contract. They ship as a
+pair and are versioned in lockstep, so a mismatch means one half is from a different release.
+
+This warning exists because the failure it prevents is a bad one: the panel looks like it works,
+then a field the newer half expects is not there, and the symptom shows up far from the cause.
+Before the check existed, the daemon reported its version, the panel printed it, and nothing
+compared them.
+
+```bash
+cargo build --release -p freecode-daemon    # rebuild the daemon from this checkout
+./target/release/freecode-cli ping          # confirm the version it now reports
+```
+
+or install the extension from the release matching your daemon.
+
+Only MAJOR.MINOR is compared — patch releases do not change the contract. An unparseable version
+(a fork, a dev build) is never reported as a mismatch: a check that cries wolf gets ignored.
+
 ## Build failures
 
 ### `failed to run custom build command` / `Could not find protoc`
@@ -140,11 +160,15 @@ To stop it properly: `launchctl bootout gui/$(id -u)/org.freecoders.freecode-dae
 
 ## Linux notes
 
-The daemon is portable Rust and runs fine, with two macOS-shaped defaults:
+The daemon is portable Rust and runs fine.
 
-- Routing telemetry defaults to `$HOME/Library/Logs/freecode-route.jsonl`. Set `FREECODE_ROUTE_LOG`
-  to something sensible, e.g. `${XDG_STATE_HOME:-$HOME/.local/state}/freecode/route.jsonl`.
-- There is no launchd. Use the systemd unit in `scripts/` or just run the binary.
+- Routing telemetry follows XDG here: `$XDG_STATE_HOME/freecode/route.jsonl`, falling back to
+  `~/.local/state/freecode/route.jsonl`. Override with `$FREECODE_ROUTE_LOG` if you want it
+  elsewhere. (It used to hardcode the macOS path on every platform, which created a `~/Library`
+  directory that belongs to no convention on Linux.)
+- There is no launchd. Use `scripts/freecode-daemon.service` — a systemd **user** unit, since the
+  daemon runs as you and binds loopback. Install instructions are in its header; logs go to
+  `journalctl --user -u freecode-daemon -f`.
 
 ---
 

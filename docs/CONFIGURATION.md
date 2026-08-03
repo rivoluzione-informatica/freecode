@@ -143,10 +143,18 @@ visible. Edit it from the Memory panel.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `FREECODE_ROUTE_LOG` | `$HOME/Library/Logs/freecode-route.jsonl` | Where routing telemetry is appended, one JSON line per turn |
+| `FREECODE_ROUTE_LOG` | platform-dependent, see below | Where routing telemetry is appended, one JSON line per turn |
 | `FREECODE_TIMING` | unset | Set to anything to print per-phase timings to the daemon's stdout |
 
-The default route-log path is macOS-shaped; set `FREECODE_ROUTE_LOG` explicitly on Linux.
+The route-log default follows the platform, in this order (`escalation.rs::route_log_path`):
+
+1. `$FREECODE_ROUTE_LOG` — wins everywhere, on every platform
+2. macOS: `~/Library/Logs/freecode-route.jsonl`
+3. elsewhere: `$XDG_STATE_HOME/freecode/route.jsonl`, falling back to `~/.local/state/freecode/route.jsonl`
+4. no home at all (a container without `$HOME`): `/tmp/freecode-route.jsonl`
+
+State, not cache and not config: machine-local history that should survive a reboot and means
+nothing on another machine.
 
 ---
 
@@ -171,6 +179,9 @@ freecode-cli ping
 freecode-cli ask <prompt> [--mode chat|hitl|auto] [--workspace <path>]
                           [--endpoint <url>] [--model <id>] [--session <id>]
 ```
+
+`ping` reports the daemon's real crate version (it used to return a hardcoded string that stayed
+`0.1.0` across four releases). The extension compares that against its own and warns on a mismatch.
 
 `doctor` exits `1` when something required is missing, `0` otherwise — usable in a script.
 `--json` emits one object with a `checks` array plus `missing` and `warnings` counts.
