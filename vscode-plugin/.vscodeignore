@@ -10,3 +10,4 @@ esbuild.js
 **/*.ts
 .github/
 test/
+media/icon-source.svg

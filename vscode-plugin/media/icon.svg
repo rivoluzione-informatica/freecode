@@ -1,20 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7c3aed" />
-      <stop offset="100%" stop-color="#2563eb" />
-    </linearGradient>
-  </defs>
-  <circle cx="50" cy="50" r="45" fill="none" stroke="url(#grad)" stroke-width="4" opacity="0.3" />
-  <path d="M 32 30 L 15 50 L 32 70" fill="none" stroke="url(#grad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 68 30 L 85 50 L 68 70" fill="none" stroke="url(#grad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-  <circle cx="50" cy="35" r="5" fill="url(#grad)" />
-  <circle cx="42" cy="50" r="4" fill="url(#grad)" />
-  <circle cx="58" cy="50" r="4" fill="url(#grad)" />
-  <circle cx="50" cy="65" r="5" fill="url(#grad)" />
-  <line x1="50" y1="35" x2="42" y2="50" stroke="url(#grad)" stroke-width="2" opacity="0.8" />
-  <line x1="50" y1="35" x2="58" y2="50" stroke="url(#grad)" stroke-width="2" opacity="0.8" />
-  <line x1="42" y1="50" x2="50" y2="65" stroke="url(#grad)" stroke-width="2" opacity="0.8" />
-  <line x1="58" y1="50" x2="50" y2="65" stroke="url(#grad)" stroke-width="2" opacity="0.8" />
-  <line x1="42" y1="50" x2="58" y2="50" stroke="url(#grad)" stroke-width="2" opacity="0.8" />
+<!--
+  Activity-bar icon.
+
+  VS Code MASKS this into a single theme colour: gradients, extra fills and opacity are discarded,
+  and what remains is drawn as a silhouette at 24px. The previous version was a 100x100
+  purple/blue gradient node-graph with 2px hairlines — none of the colour survived the mask, and
+  at activity-bar size the graph collapsed into mush.
+
+  So: one colour (`currentColor`), no gradient, no opacity, drawn on a 24px grid with strokes
+  thick enough to read at that size. A shield (the gates) with a chevron moving through it (the
+  code) — the product's thesis in the only detail that survives.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+     fill="none" stroke="currentColor" stroke-width="1.9"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 2.6 4.6 5.4v6.2c0 4.4 3 7.6 7.4 9.8 4.4-2.2 7.4-5.4 7.4-9.8V5.4Z"/>
+  <path d="m9.6 8.9 3 3.1-3 3.1"/>
+  <path d="M14.1 15.1h2.4"/>
 </svg>
