@@ -1,23 +1,25 @@
 <!--
-  Source for media/icon.png (the extension-list / marketplace icon, which is NOT masked and may
-  carry colour). Regenerate with:
+  Source for media/icon.png — the extension-list / marketplace icon, which is NOT masked by
+  VS Code and may carry colour. Regenerate with:
+
       rsvg-convert -w 128 -h 128 media/icon-source.svg -o media/icon.png
 
-  Solid colour, deliberately. A purple→blue gradient was tried first and read as flat purple at
-  any real size — the hue shift is invisible across a 6px stroke. It also cost a bug: with the
-  default objectBoundingBox units, the prompt bar is a horizontal line whose bounding box has
-  ZERO height, which makes a bbox-relative gradient degenerate, and the bar simply did not paint.
-  One colour is both more legible and impossible to get wrong.
+  The standard terminal prompt in phosphor green on black. Same two shapes as media/icon.svg
+  (the activity-bar version), which must stay monochrome because VS Code masks it.
 
-  Same mark as media/icon.svg (the activity-bar version), which must stay monochrome because
-  VS Code masks it.
+  The glyph is centred on the tile and scaled to fill it: at list size (~42px) a small mark
+  floating in a large margin reads as a mistake.
+
+  No gradient, deliberately. One was tried and dropped for two reasons: the hue shift is
+  invisible across a stroke this size, and with the default objectBoundingBox units a horizontal
+  path (the cursor bar) has a ZERO-height bounding box, which makes a bbox-relative gradient
+  degenerate — the renderer simply did not paint it.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <rect width="128" height="128" rx="26" fill="#17171b"/>
-  <g transform="translate(24,24) scale(3.333)" fill="none" stroke="#a78bfa"
-     stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2.6 4.6 5.4v6.2c0 4.4 3 7.6 7.4 9.8 4.4-2.2 7.4-5.4 7.4-9.8V5.4Z"/>
-    <path d="m9.6 8.9 3 3.1-3 3.1"/>
-    <path d="M14.1 15.1h2.4"/>
+  <rect width="128" height="128" rx="26" fill="#000000"/>
+  <g transform="translate(4,4) scale(5)" fill="none" stroke="#00e676"
+     stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m5 7 5 5-5 5"/>
+    <path d="M13 17h6"/>
   </g>
 </svg>

@@ -46,7 +46,20 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked | tee /tmp/test.out
+
+      # The README states a test count. A number in documentation drifts the moment someone adds
+      # a test, and a README that is provably wrong about something checkable in ten seconds
+      # costs more trust than the number buys. So it is enforced, not maintained by hand.
+      - name: The README's test count must be true
+        run: |
+          actual=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END {print s}')
+          claimed=$(grep -oE '# [0-9]+ tests' README.md | head -1 | grep -oE '[0-9]+')
+          echo "claimed=$claimed actual=$actual"
+          if [ "$claimed" != "$actual" ]; then
+            echo "::error file=README.md::README claims $claimed tests, the suite runs $actual"
+            exit 1
+          fi
 
   extension:
     name: vscode extension (typecheck / bundle / audit)

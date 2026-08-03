@@ -80,7 +80,7 @@ directly:
 | Variable | Effect |
 |---|---|
 | `FREECODE_TIMING` | Set to anything to print per-phase timings |
-| `FREECODE_ROUTE_LOG` | Path for the router telemetry JSONL (default `$HOME/.freecode/…`) |
+| `FREECODE_ROUTE_LOG` | Path for the router telemetry JSONL. Default: `~/Library/Logs/freecode-route.jsonl` on macOS, `$XDG_STATE_HOME/freecode/route.jsonl` (else `~/.local/state/…`) elsewhere |
 
 (`FREECODE_T1_ENDPOINT` and friends appear in `daemon/src/t1.rs` but belong to its ignored
 benchmark tests — the T1 fast-path is configured through `t1_endpoint` / `t1_model` in
@@ -139,7 +139,7 @@ worth nothing.
 ## Development
 
 ```bash
-cargo test --workspace                     # 119 tests
+cargo test --workspace                     # 133 tests
 cargo clippy --workspace --all-targets -- -D warnings
 cd vscode-plugin && npm run typecheck && npm test && node esbuild.js   # 40 tests
 ```
