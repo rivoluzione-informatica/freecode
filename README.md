@@ -139,9 +139,9 @@ worth nothing.
 ## Development
 
 ```bash
-cargo test --workspace                     # 134 tests
+cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cd vscode-plugin && npm run typecheck && npm test && node esbuild.js   # 49 tests
+cd vscode-plugin && npm run typecheck && npm test && node esbuild.js
 ```
 
 ## License

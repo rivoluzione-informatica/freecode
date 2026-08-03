@@ -48,18 +48,18 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked | tee /tmp/test.out
 
-      # The README states a test count. A number in documentation drifts the moment someone adds
-      # a test, and a README that is provably wrong about something checkable in ten seconds
-      # costs more trust than the number buys. So it is enforced, not maintained by hand.
-      - name: The README's test count must be true
+      # Report the suite's shape, do not gate on it.
+      #
+      # This step used to fail the build when the README's stated test count disagreed with the
+      # run. That guard was wrong: it enforced a number that is not a single fact about the
+      # repository — the same tree counted 134 locally and 115 here — so it turned a
+      # documentation nicety into a red build. The README no longer states a count; this prints
+      # one so a sudden drop is visible in the log without blocking anything.
+      - name: Test suite shape
         run: |
-          actual=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END {print s}')
-          claimed=$(grep -oE '# [0-9]+ tests' README.md | head -1 | grep -oE '[0-9]+')
-          echo "claimed=$claimed actual=$actual"
-          if [ "$claimed" != "$actual" ]; then
-            echo "::error file=README.md::README claims $claimed tests, the suite runs $actual"
-            exit 1
-          fi
+          total=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END {print s}')
+          echo "tests passed on ${{ runner.os }}: $total"
+          grep -E 'Running unittests|Doc-tests|test result' /tmp/test.out || true
 
   extension:
     name: vscode extension (typecheck / bundle / audit)
