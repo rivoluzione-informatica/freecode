@@ -3183,52 +3183,58 @@ pub fn filter_identity_mentions(output: &str) -> String {
     }
 
     let mut result = String::new();
+    let identity_re = identity_claim_re();
+    let mut result = String::with_capacity(output.len());
     let mut in_code_block = false;
 
-    let identity_re = identity_claim_re();
-
-    let lines: Vec<&str> = output.lines().collect();
-    let total_lines = lines.len();
-
-    for (i, line) in lines.into_iter().enumerate() {
+    // `split_inclusive` keeps each line's own terminator, so the text's line structure survives
+    // VERBATIM — including a trailing newline.
+    //
+    // This used to walk `lines()` and re-add '\n' for every index except the last. `lines()`
+    // discards terminators, so that construction silently dropped the final newline of whatever
+    // it was given. Harmless on a complete message; catastrophic on a stream, because
+    // `StreamMuzzler` flushes ON a newline — the newline is therefore ALWAYS the last character
+    // of the buffer, and was therefore always the one destroyed. Markdown arrived at the panel as
+    // one run-on paragraph while streaming, then snapped into shape at the end when the final
+    // message took a different path. The `trim_end()` that followed finished the job.
+    for piece in output.split_inclusive('\n') {
+        let (line, eol) = match piece.strip_suffix('\n') {
+            Some(l) => (l, "\n"),
+            None => (piece, ""),
+        };
         if line.starts_with("```") {
             in_code_block = !in_code_block;
             result.push_str(line);
-            if i < total_lines - 1 {
-                result.push('\n');
-            }
+            result.push_str(eol);
             continue;
         }
-
-        if in_code_block {
-            result.push_str(line);
+        if !in_code_block && identity_re.is_match(line) {
+            result.push_str(CANONICAL_IDENTITY);
         } else {
-            if identity_re.is_match(line) {
-                result.push_str(CANONICAL_IDENTITY);
-            } else {
-                result.push_str(line);
-            }
+            result.push_str(line);
         }
-
-        if i < total_lines - 1 {
-            result.push('\n');
-        }
+        result.push_str(eol);
     }
 
     // Non-empty input that filtered down to nothing means the whole message was an identity
-    // claim — the user must still get an answer, so fall back to the canonical line. (Empty
-    // input already returned above and never reaches here.)
-    let final_res = result.trim_end().to_string();
-    if final_res.trim().is_empty() {
+    // claim — the user must still get an answer. (Empty input returned above and never gets here.)
+    // NOTE: no trim. Trailing whitespace is not ours to remove; on a stream it is the layout.
+    if result.trim().is_empty() {
         CANONICAL_IDENTITY.to_string()
     } else {
-        final_res
+        result
     }
 }
 
 pub struct StreamMuzzler {
     buffer: String,
     in_code_block: bool,
+    /// Whether anything other than whitespace has been emitted yet. Models routinely open a
+    /// response with a run of newlines; forwarding them verbatim leaves the panel showing empty
+    /// space above the first word. Leading blank lines carry no markdown meaning, so they are
+    /// dropped — but only at the very start, because a blank line BETWEEN blocks is a paragraph
+    /// break and removing that would recreate the run-on bug this all exists to fix.
+    started: bool,
 }
 
 impl Default for StreamMuzzler {
@@ -3242,7 +3248,21 @@ impl StreamMuzzler {
         Self {
             buffer: String::new(),
             in_code_block: false,
+            started: false,
         }
+    }
+
+    /// Gate every emission through one place: drop it while the stream has produced nothing but
+    /// whitespace, and latch `started` as soon as real content goes out.
+    fn emit(&mut self, s: String) -> Option<String> {
+        if !self.started {
+            if s.trim().is_empty() {
+                return None;
+            }
+            self.started = true;
+            return Some(s.trim_start_matches(['\n', '\r']).to_string());
+        }
+        Some(s)
     }
 
     pub fn feed(&mut self, token: &str) -> Option<String> {
@@ -3251,23 +3271,23 @@ impl StreamMuzzler {
                 self.in_code_block = false;
                 let output = self.buffer.clone();
                 self.buffer.clear();
-                return Some(format!("{}{}", output, token));
+                return self.emit(format!("{}{}", output, token));
             } else {
                 self.in_code_block = true;
                 let flushed = filter_identity_mentions(&self.buffer);
                 self.buffer.clear();
-                return Some(format!("{}{}", flushed, token));
+                return self.emit(format!("{}{}", flushed, token));
             }
         }
 
         if self.in_code_block {
-            Some(token.to_string())
+            self.emit(token.to_string())
         } else {
             self.buffer.push_str(token);
             if token.contains('.') || token.contains('?') || token.contains('!') || token.contains('\n') {
                 let flushed = filter_identity_mentions(&self.buffer);
                 self.buffer.clear();
-                Some(flushed)
+                self.emit(flushed)
             } else {
                 None
             }
@@ -3278,7 +3298,7 @@ impl StreamMuzzler {
         if !self.buffer.is_empty() {
             let flushed = filter_identity_mentions(&self.buffer);
             self.buffer.clear();
-            Some(flushed)
+            self.emit(flushed)
         } else {
             None
         }
@@ -3652,6 +3672,122 @@ fn multiply(a: i32, b: i32, c: i32) -> i32 {
         let filtered = filter_identity_mentions("I am a large language model.");
         assert!(filtered.contains(CANONICAL_IDENTITY));
         assert!(!filtered.to_lowercase().contains("large language model"));
+    }
+
+    /// The invariant the muzzler exists under: it may REDACT an identity claim, and it may
+    /// change nothing else. In particular it must not eat newlines — markdown is made of them.
+    ///
+    /// Regression: `filter_identity_mentions` walked `lines()`, which discards terminators, and
+    /// re-added '\n' for every index but the last. Since the muzzler flushes ON a newline, the
+    /// dropped one was always the newline the text needed. Headings, lists and tables arrived at
+    /// the panel glued into a single paragraph for the whole stream, then snapped into shape at
+    /// the end because the final message took another path.
+    #[test]
+    fn streaming_reconstructs_the_text_byte_for_byte() {
+        let doc = "## Titolo\n\n\
+                   Una riga di prosa.\n\n\
+                   - primo\n\
+                   - secondo\n\n\
+                   | a | b |\n\
+                   |---|---|\n\
+                   | 1 | 2 |\n\n\
+                   ```rust\n\
+                   fn main() {}\n\
+                   ```\n\n\
+                   Chiusura.\n";
+
+        // Feed it the way a model does: small chunks that cut across lines.
+        for chunk in [1usize, 3, 7, 16, 64] {
+            let mut m = StreamMuzzler::new();
+            let mut out = String::new();
+            let bytes: Vec<char> = doc.chars().collect();
+            for piece in bytes.chunks(chunk) {
+                let tok: String = piece.iter().collect();
+                if let Some(s) = m.feed(&tok) {
+                    out.push_str(&s);
+                }
+            }
+            if let Some(s) = m.flush() {
+                out.push_str(&s);
+            }
+            assert_eq!(
+                out, doc,
+                "chunk size {chunk}: the stream did not reconstruct the text"
+            );
+        }
+    }
+
+    /// Models open a response with a run of newlines; forwarded verbatim they leave empty space
+    /// above the first word. Dropped — but ONLY at the start.
+    #[test]
+    fn leading_blank_lines_are_dropped_at_the_start_of_a_stream() {
+        let mut m = StreamMuzzler::new();
+        let mut out = String::new();
+        for tok in ["\n", "\n", "\n", "## Titolo\n", "testo.\n"] {
+            if let Some(s) = m.feed(tok) {
+                out.push_str(&s);
+            }
+        }
+        if let Some(s) = m.flush() {
+            out.push_str(&s);
+        }
+        assert!(out.starts_with("## Titolo"), "leading blanks survived: {out:?}");
+    }
+
+    /// The other half, and the one that matters more: a blank line BETWEEN blocks is a paragraph
+    /// break. Dropping those is exactly the run-on bug this whole area exists to prevent, so the
+    /// suppression must stop the instant real content appears.
+    #[test]
+    fn blank_lines_between_blocks_are_never_dropped() {
+        let doc = "## Titolo\n\nprosa\n\n- a\n- b\n";
+        let mut m = StreamMuzzler::new();
+        let mut out = String::new();
+        for ch in doc.chars() {
+            if let Some(s) = m.feed(&ch.to_string()) {
+                out.push_str(&s);
+            }
+        }
+        if let Some(s) = m.flush() {
+            out.push_str(&s);
+        }
+        assert_eq!(out, doc, "a paragraph break was lost");
+    }
+
+    /// A response that is nothing but whitespace must not become the canonical identity line —
+    /// the muzzler emits nothing at all.
+    #[test]
+    fn an_all_whitespace_stream_emits_nothing() {
+        let mut m = StreamMuzzler::new();
+        let mut out = String::new();
+        for tok in ["\n", "  ", "\n\n"] {
+            if let Some(s) = m.feed(tok) {
+                out.push_str(&s);
+            }
+        }
+        if let Some(s) = m.flush() {
+            out.push_str(&s);
+        }
+        assert_eq!(out, "", "invented output from an empty stream: {out:?}");
+    }
+
+    /// The narrow case that broke it, stated on its own so a failure names the cause.
+    #[test]
+    fn a_trailing_newline_survives_the_filter() {
+        assert_eq!(filter_identity_mentions("## Titolo\n"), "## Titolo\n");
+        assert_eq!(filter_identity_mentions("- uno\n- due\n"), "- uno\n- due\n");
+        assert_eq!(filter_identity_mentions("riga\n\n"), "riga\n\n");
+        assert_eq!(filter_identity_mentions("senza terminatore"), "senza terminatore");
+    }
+
+    /// Redaction must still happen, and must not disturb the lines around it.
+    #[test]
+    fn redaction_replaces_only_its_own_line() {
+        let input = "## Titolo\nI am a large language model.\n- voce\n";
+        let out = filter_identity_mentions(input);
+        assert!(out.starts_with("## Titolo\n"), "{out:?}");
+        assert!(out.ends_with("- voce\n"), "{out:?}");
+        assert!(!out.to_lowercase().contains("large language model"), "{out:?}");
+        assert_eq!(out.lines().count(), 3, "line count changed: {out:?}");
     }
 
     #[test]
