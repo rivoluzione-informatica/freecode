@@ -3182,7 +3182,6 @@ pub fn filter_identity_mentions(output: &str) -> String {
         return output.to_string();
     }
 
-    let mut result = String::new();
     let identity_re = identity_claim_re();
     let mut result = String::with_capacity(output.len());
     let mut in_code_block = false;
