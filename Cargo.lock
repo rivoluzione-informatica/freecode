@@ -370,11 +370,11 @@ dependencies = [
 
 [[package]]
 name = "freecode-classify"
-version = "0.1.5"
+version = "0.1.6"
 
 [[package]]
 name = "freecode-cli"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "clap",
  "prost",
@@ -385,14 +385,14 @@ dependencies = [
 
 [[package]]
 name = "freecode-compress"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "l0-compressor",
 ]
 
 [[package]]
 name = "freecode-daemon"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "freecode-classify",
  "freecode-compress",
@@ -413,7 +413,7 @@ dependencies = [
 
 [[package]]
 name = "freecode-trajectory"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "freecode-classify",
  "serde",
@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "freecode-verdict"
-version = "0.1.5"
+version = "0.1.6"
 
 [[package]]
 name = "futures-channel"

@@ -11,7 +11,7 @@
     "email": "fabrizio.salmi@gmail.com"
   },
   "license": "MIT",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "freecode",
   "engines": {
     "vscode": "^1.80.0"
