@@ -8,8 +8,11 @@ repository.workspace = true
 
 [dependencies]
 tokio = { version = "1.36", features = ["full"] }
-tonic = "0.11"
-prost = "0.12"
+tonic = "0.14"
+# tonic 0.14 scorpora il codec prost in una crate a parte; senza questa il servizio
+# generato non ha un Codec e non compila.
+tonic-prost = "0.14"
+prost = "0.14"
 reqwest = { version = "0.11", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -25,4 +28,4 @@ freecode-classify = { path = "../crates/freecode-classify" }
 freecode-verdict = { path = "../crates/freecode-verdict" }
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-prost-build = "0.14"
