@@ -20,6 +20,10 @@ function loadVersionModule() {
         [
             path.join(__dirname, '..', 'node_modules', 'typescript', 'bin', 'tsc'),
             path.join(__dirname, '..', 'src', 'version.ts'),
+            // TypeScript 7 made it an error (TS5112) to name files on the command line while a
+            // tsconfig.json exists. This compilation is deliberately standalone — the whole point
+            // is to load version.ts with no project context — so the config is skipped explicitly.
+            '--ignoreConfig',
             '--outDir', out,
             '--module', 'commonjs',
             '--target', 'es2020',

@@ -63,13 +63,13 @@
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.9.14",
-    "@grpc/proto-loader": "^0.7.10"
+    "@grpc/proto-loader": "^0.8.1"
   },
   "devDependencies": {
-    "@types/node": "^18.16.19",
+    "@types/node": "^20.19.43",
     "@types/vscode": "^1.80.0",
-    "esbuild": "^0.18.11",
-    "typescript": "^5.1.3"
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   },
   "icon": "media/icon.png"
 }
