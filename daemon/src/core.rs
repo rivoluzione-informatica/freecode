@@ -3343,7 +3343,9 @@ pub fn apply_rust_ast_edit(content: &str, symbol_name: &str, new_content: &str) 
                                 let new_method = syn::ImplItemFn {
                                     attrs: new_fn.attrs,
                                     vis: new_fn.vis,
-                                    defaultness: None,
+                                    // syn 3 moved `defaultness` into `FnModifiers`; its
+                                    // Default is that same `None`.
+                                    modifiers: syn::FnModifiers::default(),
                                     sig: new_fn.sig,
                                     block: *new_fn.block,
                                 };
