@@ -13,7 +13,7 @@ tonic = "0.14"
 # generato non ha un Codec e non compila.
 tonic-prost = "0.14"
 prost = "0.14"
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 regex = "1.10"
