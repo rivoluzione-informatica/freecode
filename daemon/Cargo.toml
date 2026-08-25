@@ -8,15 +8,18 @@ repository.workspace = true
 
 [dependencies]
 tokio = { version = "1.36", features = ["full"] }
-tonic = "0.11"
-prost = "0.12"
-reqwest = { version = "0.11", features = ["json", "stream"] }
+tonic = "0.14"
+# tonic 0.14 scorpora il codec prost in una crate a parte; senza questa il servizio
+# generato non ha un Codec e non compila.
+tonic-prost = "0.14"
+prost = "0.14"
+reqwest = { version = "0.13", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 regex = "1.10"
 tokio-stream = "0.1"
-syn = { version = "2.0", features = ["full", "parsing", "extra-traits"] }
-prettyplease = "0.2"
+syn = { version = "3.0", features = ["full", "parsing", "extra-traits"] }
+prettyplease = "0.3"
 # Already in the tree as a syn dependency; used to normalize AST nodes to token strings
 # so the API-surface diff ignores formatting.
 quote = "1.0"
@@ -25,4 +28,4 @@ freecode-classify = { path = "../crates/freecode-classify" }
 freecode-verdict = { path = "../crates/freecode-verdict" }
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-prost-build = "0.14"

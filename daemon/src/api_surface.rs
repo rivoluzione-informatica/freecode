@@ -294,7 +294,15 @@ fn fn_sig(sig: &syn::Signature) -> String {
         syn::ReturnType::Type(_, t) => toks(t),
     };
     let asyncness = if sig.asyncness.is_some() { "async " } else { "" };
-    let unsafety = if sig.unsafety.is_some() { "unsafe " } else { "" };
+    // syn 3 replaced `unsafety: Option<Token![unsafe]>` with a three-state `Safety`. The third
+    // state is real: inside an `unsafe extern` block an item can be qualified `safe`, which is
+    // NOT the same public contract as an unqualified `fn`. Collapsing it to "" would make the
+    // gate blind to that change, so all three states are rendered.
+    let unsafety = match sig.safety {
+        syn::Safety::Unsafe(_) => "unsafe ",
+        syn::Safety::Safe(_) => "safe ",
+        syn::Safety::Default => "",
+    };
     format!(
         "{}{}({}) -> {} {}",
         asyncness,
@@ -413,6 +421,7 @@ mod tests {
             ("pub fn f(a: i32) {}", "pub fn f(a: u64) {}"),              // param type
             ("pub fn f() -> i32 { 0 }", "pub fn f() -> u8 { 0 }"),       // return type
             ("pub fn f() {}", "pub async fn f() {}"),                    // asyncness
+            ("pub fn f() {}", "pub unsafe fn f() {}"),                   // safety qualifier
             ("pub fn f<T>(a: T) {}", "pub fn f<T: Clone>(a: T) {}"),     // generic bound
         ];
         for (b, a) in cases {
