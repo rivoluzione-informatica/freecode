@@ -1,3 +1,8 @@
+// tonic's generated service methods return Result<_, tonic::Status>; Status is ~176 bytes, which
+// Rust 1.98's clippy flags as result_large_err under -D warnings. The size and the signatures are
+// tonic's, not ours, so allow it crate-wide rather than boxing every RPC return.
+#![allow(clippy::result_large_err)]
+
 use tonic::transport::Server;
 
 pub mod freecode_pb {
