@@ -25,7 +25,7 @@ jobs:
     name: rust (build / clippy / test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `tonic-build` shells out to protoc to compile proto/freecode.proto; both build.rs
       # files fail without it. Not bundled with the runner image.
@@ -84,7 +84,7 @@ jobs:
       run:
         working-directory: vscode-plugin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -116,7 +116,7 @@ jobs:
     name: air-gap guard (no external CDN/CDN fonts in shipped code)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # FreeCode is local-first: shipped source must not reference a remote asset host.
       # A Google Fonts @import had been living in the webview CSS unnoticed.
