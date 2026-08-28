@@ -38,6 +38,22 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # `core::tests::test_ts_ast_editing` drives apply_ts_ast_edit, which shells out to Node and
+      # requires the project's TypeScript. Without this the directory is absent, the test skipped
+      # itself with a println nobody reads, and the one place it needed to run was the one place
+      # it never did — `npm ci` lives in the `extension` job, on a different runner. A TypeScript
+      # bump broke the feature outright with the whole suite green. The test now panics in CI if
+      # this step ever goes away.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: vscode-plugin/package-lock.json
+
+      - name: Install the extension's node_modules (the TS AST test needs a real TypeScript)
+        working-directory: vscode-plugin
+        run: npm ci
+
       # --locked: fail if Cargo.lock is stale rather than silently resolving new versions.
       - name: Build (locked)
         run: cargo build --workspace --locked

@@ -3372,8 +3372,32 @@ pub fn apply_rust_ast_edit(content: &str, symbol_name: &str, new_content: &str) 
 
 pub fn apply_ts_ast_edit(file_path: &str, symbol_name: &str, new_content: &str) -> Result<(), String> {
     let script_content = r#"
-const ts = require('typescript');
 const fs = require('fs');
+
+// TypeScript is resolved from the edited project, not from us (see NODE_PATH on the Rust side),
+// so what this gets is whatever the user has. Two ways that goes wrong, and both used to surface
+// as an unreadable TypeError several frames later.
+let ts;
+try {
+    ts = require('typescript');
+} catch (e) {
+    console.error(
+        'AST Edit needs the TypeScript compiler and this project does not have it. ' +
+        'Install it there (npm i -D typescript@5), or edit the file directly.'
+    );
+    process.exit(1);
+}
+if (!ts || typeof ts.createSourceFile !== 'function') {
+    const v = (ts && ts.version) || 'unknown';
+    console.error(
+        'This project has TypeScript ' + v + ', whose npm package does not expose the compiler ' +
+        'API that AST Edit walks. TypeScript 7 ships the Go compiler: its package exports only ' +
+        'version and versionMajorMinor, so createSourceFile does not exist. The tsc CLI still ' +
+        'works, which is why typechecking looks fine. Use TypeScript 5.x in the project for AST ' +
+        'Edit, or edit the file directly.'
+    );
+    process.exit(1);
+}
 
 const args = process.argv.slice(2);
 if (args.length < 3) {
@@ -3573,9 +3597,81 @@ fn multiply(a: i32, b: i32, c: i32) -> i32 {
             
             assert!(updated.contains("z: number"));
             assert!(updated.contains("x + y + z"));
+        } else if std::env::var_os("CI").is_some() {
+            // This used to print and pass. In CI that is not a skip, it is a hole: `npm ci` runs
+            // in a separate job on a separate runner, so this directory never existed here and
+            // the test never ran in the one place it had to. A TypeScript bump broke
+            // apply_ts_ast_edit outright and the whole suite stayed green.
+            panic!(
+                "vscode-plugin/node_modules/typescript is absent in CI. This test must RUN here, \
+                 not skip — install it in the rust job (see .github/workflows/ci.yml)."
+            );
         } else {
-            println!("Skipping TS AST test: vscode-plugin/node_modules/typescript not found");
+            eprintln!(
+                "skipping TS AST test locally: vscode-plugin/node_modules/typescript not found \
+                 (run `npm ci` in vscode-plugin). This is a hard failure in CI."
+            );
         }
+    }
+
+    /// The TypeScript that AST Edit uses belongs to the edited project, not to us: the daemon
+    /// walks up from the file looking for `node_modules` and points NODE_PATH at it. So the
+    /// compiler it gets is whatever the user installed — including one that no longer has the
+    /// API at all.
+    ///
+    /// TypeScript 7 ships the Go compiler and its npm package exports exactly two things,
+    /// `version` and `versionMajorMinor`. Before the guard, that produced
+    /// "Cannot read properties of undefined (reading 'Latest')", which names nothing.
+    ///
+    /// Uses a stub with that exact shape, so the test needs no TypeScript, no network and no
+    /// ambient state — and, unlike its neighbour above, runs everywhere.
+    #[test]
+    fn a_typescript_without_the_compiler_api_is_refused_in_words() {
+        let root = std::env::temp_dir().join(format!(
+            "freecode-ts7-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        let module = root.join("node_modules").join("typescript");
+        std::fs::create_dir_all(&module).unwrap();
+        std::fs::write(
+            module.join("package.json"),
+            r#"{"name":"typescript","version":"7.0.2","main":"index.js"}"#,
+        )
+        .unwrap();
+        // The whole of TypeScript 7's public export surface.
+        std::fs::write(
+            module.join("index.js"),
+            "module.exports = { version: '7.0.2', versionMajorMinor: '7.0' };\n",
+        )
+        .unwrap();
+
+        let file = root.join("subject.ts");
+        std::fs::write(&file, "function calculate(x: number): number {\n    return x;\n}\n").unwrap();
+
+        let res = apply_ts_ast_edit(
+            &file.to_string_lossy(),
+            "calculate",
+            "function calculate(x: number, y: number): number {\n    return x + y;\n}\n",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+
+        let err = res.expect_err("a TypeScript with no compiler API must not report success");
+        assert!(
+            err.contains("7.0.2"),
+            "the refusal must name the version in play, got: {err}"
+        );
+        assert!(
+            err.contains("compiler API"),
+            "the refusal must say what is missing, got: {err}"
+        );
+        assert!(
+            !err.contains("Cannot read properties"),
+            "the raw TypeError leaked instead of the explanation: {err}"
+        );
     }
 
     #[test]
