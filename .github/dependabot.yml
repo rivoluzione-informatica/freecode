@@ -10,8 +10,20 @@ updates:
     directory: /
     schedule:
       interval: monthly
-    open-pull-requests-limit: 5
+    # Was 5. The first triage of these PRs found the cost of that: tonic-build had a PR of its
+    # own bumping it 0.11 → 0.14 while tonic stayed at 0.11 and prost at 0.12 — an upgrade that
+    # cannot work, because the code tonic-build generates targets the tonic it shipped with. The
+    # PRs for the other two halves were never opened: the five slots were already taken. A limit
+    # that low does not just delay updates, it makes a broken half look like the whole thing.
+    open-pull-requests-limit: 10
     groups:
+      # Coupled by construction, and both couplings were found the hard way. A dependency lands
+      # in the FIRST group it matches, so these precede the catch-all deliberately.
+      grpc-stack:
+        patterns: ["tonic", "tonic-*", "prost", "prost-*"]
+      ast-stack:
+        # prettyplease 0.3 requires syn 3; the API-surface gate parses with both.
+        patterns: ["syn", "prettyplease", "quote", "proc-macro2"]
       rust-minor-and-patch:
         update-types: [minor, patch]
     commit-message:
@@ -21,19 +33,18 @@ updates:
     directory: /vscode-plugin
     schedule:
       interval: monthly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
     commit-message:
       prefix: "chore(deps)"
-    ignore:
-      # esbuild majors are held deliberately. The open advisory concerns `esbuild serve`, which
-      # this project never runs — it only calls esbuild.build()/buildSync(). A major bump on the
-      # bundler is a real regression risk for zero security gain; revisit when the advisory
-      # touches the build path.
-      - dependency-name: esbuild
-        update-types: [version-update:semver-major]
+    # No esbuild hold here any more. There used to be one, ignoring
+    # `version-update:semver-major`, with a comment explaining that esbuild majors were held
+    # because of an advisory against `esbuild serve` — which this project never runs. The rule
+    # did nothing: esbuild is 0.x, so semver-major means 0.x → 1.x, and every bump it was meant
+    # to stop (0.18 → 0.28 among them) sailed straight past it as a minor. A rule that does not
+    # do what its comment claims is worse than no rule, because everyone stops looking.
 
   - package-ecosystem: github-actions
     directory: /
