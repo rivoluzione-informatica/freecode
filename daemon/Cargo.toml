@@ -16,7 +16,7 @@ serde_json = "1.0"
 regex = "1.10"
 tokio-stream = "0.1"
 syn = { version = "2.0", features = ["full", "parsing", "extra-traits"] }
-prettyplease = "0.2"
+prettyplease = "0.3"
 # Already in the tree as a syn dependency; used to normalize AST nodes to token strings
 # so the API-surface diff ignores formatting.
 quote = "1.0"
