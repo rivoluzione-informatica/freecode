@@ -127,7 +127,22 @@ export class FreecodeClient {
         });
     }
 
-    public listModels(llmEndpoint: string): Promise<{ models: { id: string; max_model_len: string; model_type: string }[]; error: string }> {
+    public setModelLoaded(llmEndpoint: string, modelId: string, loaded: boolean): Promise<{ ok: boolean; message: string }> {
+        return new Promise((resolve, reject) => {
+            if (!this.client) {
+                return reject(new Error('gRPC client is not initialized.'));
+            }
+            this.client.SetModelLoaded({ llm_endpoint: llmEndpoint, model_id: modelId, loaded }, (err: any, response: any) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    }
+
+    public listModels(llmEndpoint: string): Promise<{ models: { id: string; max_model_len: string; model_type: string; loaded: boolean }[]; error: string }> {
         return new Promise((resolve, reject) => {
             if (!this.client) {
                 return reject(new Error('gRPC client is not initialized.'));

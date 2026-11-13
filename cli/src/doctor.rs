@@ -165,12 +165,21 @@ fn check_llm(chat_endpoint: &str) -> Check {
             "start a local OpenAI-compatible server (LM Studio, llama.cpp --server, Ollama) and load a model",
         );
     }
-    let key = std::env::var("FREECODE_LLM_API_KEY").ok();
+    // Same resolution as the daemon: the variable, else the first line of FREECODE_LLM_API_KEY_FILE.
+    let key = std::env::var("FREECODE_LLM_API_KEY")
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .or_else(|| {
+            let path = std::env::var("FREECODE_LLM_API_KEY_FILE").ok()?;
+            let text = std::fs::read_to_string(path.trim()).ok()?;
+            text.lines().next().map(|l| l.trim().to_string()).filter(|k| !k.is_empty())
+        });
     match http_get_models(&format!("{base}/v1/models"), key.as_deref()) {
         Err(ModelsError::Unauthorized) => Check::warn(
             "llm endpoint",
             format!("{hostport} answered 401 — it wants an API key"),
-            "export FREECODE_LLM_API_KEY=<key> in the daemon's environment, then restart the daemon",
+            "set FREECODE_LLM_API_KEY (or FREECODE_LLM_API_KEY_FILE=<path to a chmod 600 file>) in the daemon's environment, then restart the daemon",
         ),
         Ok(models) if !models.is_empty() => {
             let shown: Vec<&str> = models.iter().take(3).map(|s| s.as_str()).collect();

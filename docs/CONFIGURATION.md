@@ -144,6 +144,7 @@ visible. Edit it from the Memory panel.
 | Variable | Default | Effect |
 |---|---|---|
 | `FREECODE_ROUTE_LOG` | platform-dependent, see below | Where routing telemetry is appended, one JSON line per turn |
+| `FREECODE_LLM_API_KEY_FILE` | unset | File whose first line is the bearer token; used when `FREECODE_LLM_API_KEY` is unset. Warns on stderr if group/world-readable. Re-read on every request |
 | `FREECODE_TIMING` | unset | Set to anything to print per-phase timings to the daemon's stdout |
 | `FREECODE_LLM_API_KEY` | unset | Bearer token the daemon sends to the LLM endpoint (chat, T1, model list). Unset or blank: no `Authorization` header. Never stored in `.freecode/config.json` |
 
@@ -166,7 +167,7 @@ In the panel's **Settings**, stored in the webview and sent with each dispatch:
 | Setting | Default | Effect |
 |---|---|---|
 | LLM Endpoint URL | `http://127.0.0.1:1234/v1/chat/completions` | Overrides the daemon default for this session |
-| LLM Model Name | `gemma-4-e2b-it-mlx` | Model id to request. The refresh button next to it asks the endpoint for `/v1/models` (through the daemon, so the API key applies) and offers the ids as suggestions with the reported context size; the field stays free text |
+| LLM Model Name | `gemma-4-e2b-it-mlx` | Model id to request. The refresh button next to it asks the endpoint for `/v1/models` (through the daemon, so the API key applies) and offers the ids as suggestions with the reported context size; the field stays free text. **Load** and **Unload** ask the server to bring the named model into memory or free it (oMLX only; other servers say so), and models already resident are labelled `loaded` |
 | Excluded Files | — | Writes `excluded_files` into the project config |
 | Monotonicity Curation | off | Export only successful trajectories |
 

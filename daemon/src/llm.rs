@@ -39,8 +39,59 @@ pub fn auth_headers(key: Option<&str>) -> reqwest::header::HeaderMap {
     headers
 }
 
+/// Path of a file holding the token, for when the daemon runs as a service and the secret should
+/// not sit in a LaunchAgent plist or a systemd unit (both world-readable by default and visible in
+/// `ps`/`launchctl print`). The file is read on every client build, so rotating the key needs no
+/// daemon restart. `FREECODE_LLM_API_KEY` wins when both are set.
+pub const API_KEY_FILE_ENV: &str = "FREECODE_LLM_API_KEY_FILE";
+
+/// The token to use: the environment variable, else the first line of the key file, else none.
+/// An unreadable file yields none (with one warning on stderr), never a panic: a daemon that dies
+/// because a key file is missing is worse than one that gets a clear 401 from the backend.
+pub fn resolve_api_key(env_key: Option<&str>, key_file: Option<&str>) -> Option<String> {
+    if let Some(k) = env_key.map(str::trim).filter(|k| !k.is_empty()) {
+        return Some(k.to_string());
+    }
+    let path = key_file.map(str::trim).filter(|p| !p.is_empty())?;
+    match std::fs::read_to_string(path) {
+        Ok(text) => {
+            warn_if_group_or_world_readable(path);
+            text.lines().next().map(|l| l.trim().to_string()).filter(|k| !k.is_empty())
+        }
+        Err(e) => {
+            warn_once(&format!("[llm] cannot read {API_KEY_FILE_ENV}={path}: {e}"));
+            None
+        }
+    }
+}
+
+fn warn_once(msg: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!("{msg}");
+    }
+}
+
+#[cfg(unix)]
+fn warn_if_group_or_world_readable(path: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.permissions().mode() & 0o077 != 0 {
+            warn_once(&format!("[llm] {path} is readable by other users; run: chmod 600 {path}"));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn warn_if_group_or_world_readable(_path: &str) {}
+
 fn env_auth_headers() -> reqwest::header::HeaderMap {
-    auth_headers(std::env::var(API_KEY_ENV).ok().as_deref())
+    let key = resolve_api_key(
+        std::env::var(API_KEY_ENV).ok().as_deref(),
+        std::env::var(API_KEY_FILE_ENV).ok().as_deref(),
+    );
+    auth_headers(key.as_deref())
 }
 
 /// Shared client for the STREAMING chat path: bounded connect, unbounded body
@@ -75,6 +126,8 @@ pub struct ListedModel {
     pub id: String,
     pub max_model_len: i64,
     pub model_type: String,
+    /// Resident in memory now, per `/v1/models/status`. False also when the server has no such endpoint.
+    pub loaded: bool,
 }
 
 /// `http://host:port/v1/models` for a chat endpoint such as `http://host:port/v1/chat/completions`.
@@ -100,9 +153,84 @@ pub fn parse_models(body: &str) -> Result<Vec<ListedModel>, String> {
                 id: m["id"].as_str()?.to_string(),
                 max_model_len: m["max_model_len"].as_i64().unwrap_or(0),
                 model_type: m["model_type"].as_str().unwrap_or("").to_string(),
+                loaded: false,
             })
         })
         .collect())
+}
+
+/// Ids of the models a `/v1/models/status` body reports as `"loaded": true`. Anything that does not
+/// parse yields an empty set: the status endpoint is a bonus, never a reason to fail the list.
+pub fn parse_loaded_ids(body: &str) -> std::collections::HashSet<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else { return Default::default() };
+    v["models"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter(|m| m["loaded"].as_bool() == Some(true))
+                .filter_map(|m| m["id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `<base>/v1/models/<id>/<load|unload>` with the id percent-encoded as one path segment, so an id
+/// containing `/`, `?` or `#` cannot reach another route.
+pub fn model_action_url(chat_endpoint: &str, model_id: &str, load: bool) -> Result<String, String> {
+    let id = model_id.trim();
+    if id.is_empty() {
+        return Err("no model name given".into());
+    }
+    // The URL parser resolves dot segments, so "." or ".." would rewrite the route instead of
+    // naming a model. No real model id is either.
+    if id == "." || id == ".." {
+        return Err(format!("'{id}' is not a valid model name"));
+    }
+    let mut url = reqwest::Url::parse(&models_url(chat_endpoint)).map_err(|e| format!("bad endpoint: {e}"))?;
+    url.path_segments_mut()
+        .map_err(|_| "bad endpoint: cannot carry a path".to_string())?
+        .push(id)
+        .push(if load { "load" } else { "unload" });
+    Ok(url.into())
+}
+
+/// One line for a failed load/unload. A 404 is ambiguous: FastAPI answers `{"detail":"Not Found"}`
+/// when the route does not exist (a server that is not oMLX), but oMLX itself answers 404 with
+/// `Model not found: <id>` for a bad name. Only the first means "this server cannot do that".
+pub fn describe_action_failure(status: u16, body: &str, verb: &str) -> String {
+    let detail = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["detail"].as_str().map(str::to_string));
+    let route_missing = matches!(status, 404 | 405) && matches!(detail.as_deref(), None | Some("Not Found"));
+    if route_missing {
+        return format!("this server does not offer {verb} (oMLX does); it loads models on demand or from its own UI");
+    }
+    let text = detail.unwrap_or_else(|| body.chars().take(200).collect());
+    format!("{verb} failed ({status}): {text}")
+}
+
+/// Load or unload one model. Only oMLX offers this; a 404 says so rather than looking like a failure.
+pub async fn set_model_loaded(chat_endpoint: &str, model_id: &str, load: bool) -> Result<String, String> {
+    let url = model_action_url(chat_endpoint, model_id, load)?;
+    let verb = if load { "load" } else { "unload" };
+    let resp = blocking_client()
+        .post(&url)
+        .send()
+        .await
+        .map_err(|e| format!("cannot reach the server: {e}"))?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!("{status}: the server wants an API key. Set {API_KEY_ENV} (or {API_KEY_FILE_ENV}) in the daemon's environment and restart it"));
+    }
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(describe_action_failure(status.as_u16(), &body, verb));
+    }
+    let message = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v["message"].as_str().map(str::to_string))
+        .unwrap_or_else(|| format!("{verb} done"));
+    Ok(message)
 }
 
 /// Ask the endpoint which models it serves. Every failure is a one-line `Err` for the panel.
@@ -116,14 +244,27 @@ pub async fn list_models(chat_endpoint: &str) -> Result<Vec<ListedModel>, String
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Err(format!(
-            "{status}: the server wants an API key. Set {API_KEY_ENV} in the daemon's environment and restart it"
+            "{status}: the server wants an API key. Set {API_KEY_ENV} (or {API_KEY_FILE_ENV}) in the daemon's environment and restart it"
         ));
     }
     if !status.is_success() {
         return Err(format!("{url} answered {status}"));
     }
     let body = resp.text().await.map_err(|e| format!("could not read the response: {e}"))?;
-    parse_models(&body)
+    let mut models = parse_models(&body)?;
+    // Best effort: which of them are resident. A server without the endpoint just shows none.
+    let status_url = format!("{url}/status");
+    if let Ok(r) = blocking_client().get(&status_url).send().await {
+        if r.status().is_success() {
+            if let Ok(text) = r.text().await {
+                let loaded = parse_loaded_ids(&text);
+                for m in &mut models {
+                    m.loaded = loaded.contains(&m.id);
+                }
+            }
+        }
+    }
+    Ok(models)
 }
 
 // ---------------------------------------------------------------------------
@@ -324,8 +465,8 @@ mod tests {
         ]}"#;
         let m = parse_models(body).unwrap();
         assert_eq!(m.len(), 2, "an entry without an id is skipped");
-        assert_eq!(m[0], ListedModel { id: "Qwen3.5-2B-4bit".into(), max_model_len: 262144, model_type: "vlm".into() });
-        assert_eq!(m[1], ListedModel { id: "plain-openai-model".into(), max_model_len: 0, model_type: String::new() });
+        assert_eq!(m[0], ListedModel { id: "Qwen3.5-2B-4bit".into(), max_model_len: 262144, model_type: "vlm".into(), loaded: false });
+        assert_eq!(m[1], ListedModel { id: "plain-openai-model".into(), max_model_len: 0, model_type: String::new(), loaded: false });
     }
 
     #[test]
@@ -333,6 +474,64 @@ mod tests {
         assert!(parse_models("<html>").is_err());
         assert!(parse_models(r#"{"error":"API key required"}"#).is_err());
         assert_eq!(parse_models(r#"{"data":[]}"#).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn parse_loaded_ids_keeps_only_resident_models_and_survives_garbage() {
+        let body = r#"{"model_count":3,"models":[
+            {"id":"a","loaded":true},{"id":"b","loaded":false},{"id":"c"}]}"#;
+        let got = parse_loaded_ids(body);
+        assert_eq!(got.len(), 1);
+        assert!(got.contains("a"));
+        assert!(parse_loaded_ids("<html>").is_empty());
+        assert!(parse_loaded_ids(r#"{"error":"x"}"#).is_empty());
+    }
+
+    #[test]
+    fn model_action_url_encodes_the_id_as_a_single_segment() {
+        let ep = "http://127.0.0.1:1234/v1/chat/completions";
+        assert_eq!(model_action_url(ep, "Qwen3.5-2B-4bit", true).unwrap(), "http://127.0.0.1:1234/v1/models/Qwen3.5-2B-4bit/load");
+        assert_eq!(model_action_url(ep, "m", false).unwrap(), "http://127.0.0.1:1234/v1/models/m/unload");
+        // A hostile id must not climb out of its segment or start a query.
+        let u = model_action_url(ep, "../x?y#z/w", true).unwrap();
+        assert!(u.starts_with("http://127.0.0.1:1234/v1/models/"), "{u}");
+        assert!(u.ends_with("/load"), "{u}");
+        assert!(!u.contains('?') && !u.contains('#'), "{u}");
+        assert_eq!(u.matches('/').count(), "http://127.0.0.1:1234/v1/models/X/load".matches('/').count(), "{u}");
+        // Dot segments are the classic way out of a path; they are refused outright.
+        assert!(model_action_url(ep, "..", true).is_err());
+        assert!(model_action_url(ep, ".", false).is_err());
+        assert!(model_action_url(ep, "  ", true).is_err());
+    }
+
+    #[test]
+    fn a_missing_route_and_an_unknown_model_are_told_apart() {
+        let missing = describe_action_failure(404, r#"{"detail":"Not Found"}"#, "load");
+        assert!(missing.contains("does not offer load"), "{missing}");
+        assert!(describe_action_failure(404, "<html>nope</html>", "load").contains("does not offer"));
+        let unknown = describe_action_failure(404, r#"{"detail":"Model not found: x"}"#, "load");
+        assert_eq!(unknown, "load failed (404): Model not found: x");
+        assert_eq!(
+            describe_action_failure(507, r#"{"detail":"not enough memory"}"#, "unload"),
+            "unload failed (507): not enough memory"
+        );
+    }
+
+    #[test]
+    fn the_key_comes_from_the_environment_first_then_from_the_file() {
+        let dir = std::env::temp_dir().join(format!("freecode-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("key");
+        std::fs::write(&file, "from-file\nignored second line\n").unwrap();
+        let f = file.to_str().unwrap();
+        assert_eq!(resolve_api_key(Some("from-env"), Some(f)).as_deref(), Some("from-env"));
+        assert_eq!(resolve_api_key(None, Some(f)).as_deref(), Some("from-file"));
+        assert_eq!(resolve_api_key(Some("  "), Some(f)).as_deref(), Some("from-file"));
+        assert_eq!(resolve_api_key(None, None), None);
+        assert_eq!(resolve_api_key(None, Some("/nonexistent/freecode-key")), None);
+        std::fs::write(&file, "\n").unwrap();
+        assert_eq!(resolve_api_key(None, Some(f)), None, "an empty file is no key");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

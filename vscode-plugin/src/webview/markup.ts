@@ -150,6 +150,8 @@ export function getWebviewHtml(css: string, js: string, cspSource: string = '', 
                 <div style="display: flex; gap: 4px; width: 100%;">
                     <input type="text" id="settingLlmModel" list="settingLlmModelList" class="input-text" style="flex: 1; min-width: 0; box-sizing: border-box;" placeholder="gemma-4-e2b-it-mlx">
                     <button type="button" class="header-btn" data-action="refreshModels" title="List the models the server offers">&#8635;</button>
+                    <button type="button" class="header-btn" data-action="loadModel" title="Load this model into memory (oMLX)">Load</button>
+                    <button type="button" class="header-btn" data-action="unloadModel" title="Free this model's memory (oMLX)">Unload</button>
                 </div>
                 <datalist id="settingLlmModelList"></datalist>
                 <span id="settingModelsStatus" style="font-size: 10px; color: var(--text-muted);"></span>

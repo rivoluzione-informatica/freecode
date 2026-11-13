@@ -149,6 +149,23 @@ through the gates) · **CHAT** (read-only).
   ```
 - **Remote**: `origin` = github.com/rivoluzione-informatica/freecode. Commit/push only when intended.
 
+### Running the service against an authenticated LLM server (oMLX with an API key)
+Do not put the key in the LaunchAgent plist or the systemd unit: both are readable by other users and
+the value shows up in `launchctl print` / `ps`. Keep it in a file only you can read and point the
+daemon at it:
+```bash
+install -m 600 /dev/null ~/.config/freecode-llm-key      # create it empty, mode 600
+$EDITOR ~/.config/freecode-llm-key                        # one line: the token
+```
+then add to the LaunchAgent plist's `<dict>` (a path is not a secret):
+```xml
+<key>EnvironmentVariables</key>
+<dict><key>FREECODE_LLM_API_KEY_FILE</key><string>/Users/you/.config/freecode-llm-key</string></dict>
+```
+or, for systemd, `Environment=FREECODE_LLM_API_KEY_FILE=%h/.config/freecode-llm-key`. Restart the daemon once;
+after that the key is re-read on every request. `freecode-cli doctor` follows the same variables and tells
+you when the server answers 401.
+
 ## 8. Where to read next
 - `docs/rfc-006-tiered-generate-and-validate.md` — the architecture (tiers, validator stack, the verdict
   firewall, the AIMP decision). The others: rfc-001 tool-calling · rfc-002 `run` · rfc-003 compression ·

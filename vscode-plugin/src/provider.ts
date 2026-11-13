@@ -732,6 +732,19 @@ export class FreecodeAssistantViewProvider implements vscode.WebviewViewProvider
                     }
                     break;
                 }
+                case 'setModelLoaded': {
+                    try {
+                        const res = await this.client.setModelLoaded(
+                            String(data.llmEndpoint || ''), String(data.modelId || ''), data.loaded === true);
+                        webviewView.webview.postMessage({ type: 'modelAction', ok: !!res.ok, message: res.message || '' });
+                    } catch (err: any) {
+                        webviewView.webview.postMessage({
+                            type: 'modelAction', ok: false,
+                            message: 'The daemon did not answer (is it running, and the same version as this extension?)'
+                        });
+                    }
+                    break;
+                }
                 case 'getGitStatus': {
                     try {
                         const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '.';
