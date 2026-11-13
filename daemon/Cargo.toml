@@ -25,4 +25,4 @@ freecode-classify = { path = "../crates/freecode-classify" }
 freecode-verdict = { path = "../crates/freecode-verdict" }
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-build = "0.14"
