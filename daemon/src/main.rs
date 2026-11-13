@@ -2,6 +2,10 @@
 // Rust 1.98's clippy flags as result_large_err under -D warnings. The size and the signatures are
 // tonic's, not ours, so allow it crate-wide rather than boxing every RPC return.
 #![allow(clippy::result_large_err)]
+// The code tonic-build generates from freecode.proto puts `#[must_use]` on a method that already
+// returns a `#[must_use]` type; newer clippy flags that as double_must_use under -D warnings.
+// The text is generated, not ours, so allow it crate-wide.
+#![allow(clippy::double_must_use)]
 
 use tonic::transport::Server;
 
