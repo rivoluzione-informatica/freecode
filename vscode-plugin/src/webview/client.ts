@@ -394,12 +394,60 @@ export function getWebviewJs(): string {
                  
                  const elMono = document.getElementById('settingMonotonicity');
                  if (elMono) elMono.checked = localStorage.getItem('monotonicityFilter') === 'true';
+                 refreshModels();
              } else {
                  panel.style.display = 'none';
                  btn.classList.remove('active');
              }
          }
  
+         // Ask the extension (and through it the daemon) which models the endpoint serves. The input
+         // stays free text: a server that does not list models must not lock the field.
+         function refreshModels() {
+             const status = document.getElementById('settingModelsStatus');
+             if (status) status.textContent = 'Loading models...';
+             const ep = document.getElementById('settingLlmEndpoint').value.trim();
+             vscode.postMessage({ type: 'listModels', llmEndpoint: ep });
+         }
+
+         // Load or unload the model named in the field. Only oMLX offers it; the daemon says so otherwise.
+         function setModelLoaded(loaded) {
+             const model = document.getElementById('settingLlmModel').value.trim();
+             const status = document.getElementById('settingModelsStatus');
+             if (!model) { if (status) status.textContent = 'Type or pick a model first'; return; }
+             if (status) status.textContent = (loaded ? 'Loading ' : 'Unloading ') + model + '...';
+             vscode.postMessage({
+                 type: 'setModelLoaded',
+                 llmEndpoint: document.getElementById('settingLlmEndpoint').value.trim(),
+                 modelId: model,
+                 loaded: loaded
+             });
+         }
+
+         // The last load/unload answer, shown in front of the count once the refreshed list arrives.
+         let pendingActionNote = '';
+
+         function showModels(models, error) {
+             const list = document.getElementById('settingLlmModelList');
+             const status = document.getElementById('settingModelsStatus');
+             if (!list || !status) return;
+             while (list.firstChild) list.removeChild(list.firstChild);
+             if (error) { status.textContent = error; return; }
+             // Built with createElement/textContent: model ids come from a server and are untrusted.
+             models.forEach(function (m) {
+                 const o = document.createElement('option');
+                 o.value = m.id;
+                 const ctx = Number(m.max_model_len) > 0 ? Math.round(Number(m.max_model_len) / 1024) + 'k ctx' : '';
+                 o.label = [m.loaded ? 'loaded' : '', m.model_type, ctx].filter(Boolean).join(', ');
+                 list.appendChild(o);
+             });
+             const nLoaded = models.filter(function (m) { return m.loaded; }).length;
+             const summary = models.length + (models.length === 1 ? ' model' : ' models') + ' available' +
+                 (nLoaded ? ', ' + nLoaded + ' loaded' : '');
+             status.textContent = pendingActionNote ? pendingActionNote + ' | ' + summary : summary;
+             pendingActionNote = '';
+         }
+
          function saveSettings() {
              const endpointInput = document.getElementById('settingLlmEndpoint');
              const modelInput = document.getElementById('settingLlmModel');
@@ -1609,6 +1657,20 @@ export function getWebviewJs(): string {
                 case 'gitStatus':
                     updateGitPanel(message.status);
                     break;
+                case 'models':
+                    showModels(message.models || [], message.error || '');
+                    break;
+                case 'modelAction': {
+                    const st = document.getElementById('settingModelsStatus');
+                    if (st) st.textContent = message.message || (message.ok ? 'Done' : 'Failed');
+                    // Re-read the list so the "loaded" labels follow what the server now holds.
+                    if (message.ok) {
+                        const ep = document.getElementById('settingLlmEndpoint').value.trim();
+                        pendingActionNote = message.message || 'Done';
+                        vscode.postMessage({ type: 'listModels', llmEndpoint: ep });
+                    }
+                    break;
+                }
                 case 'scope':
                     scopeHome = (message.scope && message.scope.home) || '';
                     scopeEntries = (message.scope && message.scope.entries) || [];
@@ -1816,6 +1878,9 @@ export function getWebviewJs(): string {
             toggleMemoryPanel:   function (el, ev) { toggleMemoryPanel(); },
             toggleHarnessPanel:  function (el, ev) { toggleHarnessPanel(); },
             toggleSettingsPanel: function (el, ev) { toggleSettingsPanel(); },
+            refreshModels: function (el, ev) { refreshModels(); },
+            loadModel: function (el, ev) { setModelLoaded(true); },
+            unloadModel: function (el, ev) { setModelLoaded(false); },
             toggleAstSection:    function (el, ev) { toggleAstSection(); },
             toggleParamsSection: function (el, ev) { toggleParamsSection(); },
             fcCycleMode:         function (el, ev) { fcCycleMode(); },

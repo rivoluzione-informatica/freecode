@@ -15,6 +15,16 @@ service FreecodeService {
 
   // Query git repository status
   rpc GetGitStatus (GitStatusRequest) returns (GitStatusResponse);
+
+  // List the models the configured LLM endpoint serves (GET <base>/v1/models). Goes through the
+  // daemon so the bearer token (FREECODE_LLM_API_KEY) stays in one place and never reaches the
+  // webview. A backend failure is reported in `error`, not as a gRPC error: an unreachable or
+  // unauthorised server is an expected state for a settings panel, not a crash.
+  rpc ListModels (ListModelsRequest) returns (ListModelsResponse);
+
+  // Ask the server to load or unload one model (oMLX: POST /v1/models/{id}/load|unload). Servers
+  // without that endpoint answer `ok = false` with a message saying so; nothing else changes.
+  rpc SetModelLoaded (SetModelLoadedRequest) returns (SetModelLoadedResponse);
 }
 
 message PingRequest {}
@@ -70,4 +80,40 @@ message GitStatusResponse {
   repeated string modified_files = 3;
   repeated string added_files = 4;
   repeated string deleted_files = 5;
+}
+
+message ListModelsRequest {
+  // The chat endpoint as configured in the panel, e.g. http://127.0.0.1:1234/v1/chat/completions.
+  // Empty means the daemon default.
+  string llm_endpoint = 1;
+}
+
+message ModelInfo {
+  string id = 1;
+  // Context window the server reports (oMLX: max_model_len). 0 when the server does not say.
+  int64 max_model_len = 2;
+  // Free-form kind the server reports (oMLX: "llm", "vlm", ...). Empty when absent.
+  string model_type = 3;
+  // True when the server says the model is resident in memory now (oMLX: /v1/models/status).
+  // False means "not loaded" or "the server does not say"; the panel only ever shows the positive.
+  bool loaded = 4;
+}
+
+message SetModelLoadedRequest {
+  string llm_endpoint = 1;
+  string model_id = 2;
+  // true = load, false = unload.
+  bool loaded = 3;
+}
+
+message SetModelLoadedResponse {
+  bool ok = 1;
+  // One line for the panel: what the server said on success, or why it did not work.
+  string message = 2;
+}
+
+message ListModelsResponse {
+  repeated ModelInfo models = 1;
+  // Empty on success; otherwise a one-line reason (401 needs a key, connection refused, ...).
+  string error = 2;
 }

@@ -215,11 +215,11 @@ fn budget_trim(files: &[DiffFile], dropped_files: usize, budget_tokens: usize) -
             out.push('\n');
         }
         let mut elided = 0usize;
-        for hi in 0..f.hunks.len() {
+        for (hi, hunk) in f.hunks.iter().enumerate() {
             if keep.contains(&(fi, hi)) {
-                out.push_str(f.hunks[hi].header);
+                out.push_str(hunk.header);
                 out.push('\n');
-                for l in reduce_context(&f.hunks[hi].body, MAX_CONTEXT) {
+                for l in reduce_context(&hunk.body, MAX_CONTEXT) {
                     out.push_str(&l);
                     out.push('\n');
                 }
