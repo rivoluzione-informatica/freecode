@@ -127,6 +127,21 @@ export class FreecodeClient {
         });
     }
 
+    public listModels(llmEndpoint: string): Promise<{ models: { id: string; max_model_len: string; model_type: string }[]; error: string }> {
+        return new Promise((resolve, reject) => {
+            if (!this.client) {
+                return reject(new Error('gRPC client is not initialized.'));
+            }
+            this.client.ListModels({ llm_endpoint: llmEndpoint }, (err: any, response: any) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    }
+
     public getGitStatus(workspacePath: string): Promise<{ is_inside_repo: boolean; branch: string; modified_files: string[]; added_files: string[]; deleted_files: string[] }> {
         return new Promise((resolve, reject) => {
             if (!this.client) {

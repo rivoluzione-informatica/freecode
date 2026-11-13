@@ -394,12 +394,39 @@ export function getWebviewJs(): string {
                  
                  const elMono = document.getElementById('settingMonotonicity');
                  if (elMono) elMono.checked = localStorage.getItem('monotonicityFilter') === 'true';
+                 refreshModels();
              } else {
                  panel.style.display = 'none';
                  btn.classList.remove('active');
              }
          }
  
+         // Ask the extension (and through it the daemon) which models the endpoint serves. The input
+         // stays free text: a server that does not list models must not lock the field.
+         function refreshModels() {
+             const status = document.getElementById('settingModelsStatus');
+             if (status) status.textContent = 'Loading models...';
+             const ep = document.getElementById('settingLlmEndpoint').value.trim();
+             vscode.postMessage({ type: 'listModels', llmEndpoint: ep });
+         }
+
+         function showModels(models, error) {
+             const list = document.getElementById('settingLlmModelList');
+             const status = document.getElementById('settingModelsStatus');
+             if (!list || !status) return;
+             while (list.firstChild) list.removeChild(list.firstChild);
+             if (error) { status.textContent = error; return; }
+             // Built with createElement/textContent: model ids come from a server and are untrusted.
+             models.forEach(function (m) {
+                 const o = document.createElement('option');
+                 o.value = m.id;
+                 const ctx = Number(m.max_model_len) > 0 ? Math.round(Number(m.max_model_len) / 1024) + 'k ctx' : '';
+                 o.label = [m.model_type, ctx].filter(Boolean).join(', ');
+                 list.appendChild(o);
+             });
+             status.textContent = models.length + (models.length === 1 ? ' model' : ' models') + ' available';
+         }
+
          function saveSettings() {
              const endpointInput = document.getElementById('settingLlmEndpoint');
              const modelInput = document.getElementById('settingLlmModel');
@@ -1609,6 +1636,9 @@ export function getWebviewJs(): string {
                 case 'gitStatus':
                     updateGitPanel(message.status);
                     break;
+                case 'models':
+                    showModels(message.models || [], message.error || '');
+                    break;
                 case 'scope':
                     scopeHome = (message.scope && message.scope.home) || '';
                     scopeEntries = (message.scope && message.scope.entries) || [];
@@ -1816,6 +1846,7 @@ export function getWebviewJs(): string {
             toggleMemoryPanel:   function (el, ev) { toggleMemoryPanel(); },
             toggleHarnessPanel:  function (el, ev) { toggleHarnessPanel(); },
             toggleSettingsPanel: function (el, ev) { toggleSettingsPanel(); },
+            refreshModels: function (el, ev) { refreshModels(); },
             toggleAstSection:    function (el, ev) { toggleAstSection(); },
             toggleParamsSection: function (el, ev) { toggleParamsSection(); },
             fcCycleMode:         function (el, ev) { fcCycleMode(); },

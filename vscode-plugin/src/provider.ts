@@ -712,6 +712,26 @@ export class FreecodeAssistantViewProvider implements vscode.WebviewViewProvider
                     }
                     break;
                 }
+                case 'listModels': {
+                    // The daemon does the HTTP call, so the bearer token stays on its side and the
+                    // webview never sees it. A backend failure comes back in `error`; a gRPC error
+                    // means the daemon itself is unreachable or predates ListModels.
+                    try {
+                        const res = await this.client.listModels(String(data.llmEndpoint || ''));
+                        webviewView.webview.postMessage({
+                            type: 'models',
+                            models: res.models || [],
+                            error: res.error || ''
+                        });
+                    } catch (err: any) {
+                        webviewView.webview.postMessage({
+                            type: 'models',
+                            models: [],
+                            error: 'The daemon did not answer the model list (is it running, and the same version as this extension?)'
+                        });
+                    }
+                    break;
+                }
                 case 'getGitStatus': {
                     try {
                         const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '.';

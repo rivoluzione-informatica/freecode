@@ -79,6 +79,7 @@ directly:
 
 | Variable | Effect |
 |---|---|
+| `FREECODE_LLM_API_KEY` | Bearer token sent to the LLM endpoint, for servers that require one (oMLX with an API key, LiteLLM). Read by the daemon, so set it in the daemon's environment and restart it. Unset: no `Authorization` header |
 | `FREECODE_TIMING` | Set to anything to print per-phase timings |
 | `FREECODE_ROUTE_LOG` | Path for the router telemetry JSONL. Default: `~/Library/Logs/freecode-route.jsonl` on macOS, `$XDG_STATE_HOME/freecode/route.jsonl` (else `~/.local/state/…`) elsewhere |
 

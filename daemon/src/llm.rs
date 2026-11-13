@@ -65,6 +65,68 @@ pub fn blocking_client() -> reqwest::Client {
 }
 
 // ---------------------------------------------------------------------------
+// Model discovery: GET <base>/v1/models on an OpenAI-compatible server.
+// ---------------------------------------------------------------------------
+
+/// One entry of `/v1/models`. `max_model_len` and `model_type` are oMLX extensions; a plain
+/// OpenAI-compatible server (LM Studio, llama.cpp) omits them and they read as 0 / empty.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ListedModel {
+    pub id: String,
+    pub max_model_len: i64,
+    pub model_type: String,
+}
+
+/// `http://host:port/v1/models` for a chat endpoint such as `http://host:port/v1/chat/completions`.
+/// An endpoint without a `/v1/` segment is used as a base as-is.
+pub fn models_url(chat_endpoint: &str) -> String {
+    let base = match chat_endpoint.find("/v1/") {
+        Some(i) => &chat_endpoint[..i],
+        None => chat_endpoint.trim_end_matches('/'),
+    };
+    format!("{base}/v1/models")
+}
+
+/// Parse the body of `/v1/models`. Entries without a string `id` are skipped; a body that is not
+/// the expected `{"data":[...]}` shape is an error rather than an empty list, so the panel can say
+/// "this does not look like an OpenAI server" instead of "no models".
+pub fn parse_models(body: &str) -> Result<Vec<ListedModel>, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| format!("not JSON: {e}"))?;
+    let arr = v["data"].as_array().ok_or("no \"data\" array in the response")?;
+    Ok(arr
+        .iter()
+        .filter_map(|m| {
+            Some(ListedModel {
+                id: m["id"].as_str()?.to_string(),
+                max_model_len: m["max_model_len"].as_i64().unwrap_or(0),
+                model_type: m["model_type"].as_str().unwrap_or("").to_string(),
+            })
+        })
+        .collect())
+}
+
+/// Ask the endpoint which models it serves. Every failure is a one-line `Err` for the panel.
+pub async fn list_models(chat_endpoint: &str) -> Result<Vec<ListedModel>, String> {
+    let url = models_url(chat_endpoint);
+    let resp = blocking_client()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("cannot reach {url}: {e}"))?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err(format!(
+            "{status}: the server wants an API key. Set {API_KEY_ENV} in the daemon's environment and restart it"
+        ));
+    }
+    if !status.is_success() {
+        return Err(format!("{url} answered {status}"));
+    }
+    let body = resp.text().await.map_err(|e| format!("could not read the response: {e}"))?;
+    parse_models(&body)
+}
+
+// ---------------------------------------------------------------------------
 // Chat messages (OpenAI shape). `content` stays a String for backward-compat
 // with the existing tag path; tool fields are optional and omitted when unset.
 // ---------------------------------------------------------------------------
@@ -245,6 +307,33 @@ pub fn assemble_tool_calls(fragments: &[ToolCallDelta]) -> Vec<ToolCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn models_url_is_derived_from_the_chat_endpoint() {
+        assert_eq!(models_url("http://127.0.0.1:1234/v1/chat/completions"), "http://127.0.0.1:1234/v1/models");
+        assert_eq!(models_url("http://h:8000/v1/completions"), "http://h:8000/v1/models");
+        assert_eq!(models_url("http://h:8000/"), "http://h:8000/v1/models");
+    }
+
+    #[test]
+    fn parse_models_reads_the_omlx_extensions_and_tolerates_their_absence() {
+        let body = r#"{"object":"list","data":[
+            {"id":"Qwen3.5-2B-4bit","model_type":"vlm","max_model_len":262144},
+            {"id":"plain-openai-model"},
+            {"object":"model"}
+        ]}"#;
+        let m = parse_models(body).unwrap();
+        assert_eq!(m.len(), 2, "an entry without an id is skipped");
+        assert_eq!(m[0], ListedModel { id: "Qwen3.5-2B-4bit".into(), max_model_len: 262144, model_type: "vlm".into() });
+        assert_eq!(m[1], ListedModel { id: "plain-openai-model".into(), max_model_len: 0, model_type: String::new() });
+    }
+
+    #[test]
+    fn parse_models_rejects_what_is_not_a_model_list() {
+        assert!(parse_models("<html>").is_err());
+        assert!(parse_models(r#"{"error":"API key required"}"#).is_err());
+        assert_eq!(parse_models(r#"{"data":[]}"#).unwrap(), vec![]);
+    }
 
     #[test]
     fn auth_headers_carry_a_bearer_token() {

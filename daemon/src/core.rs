@@ -2,7 +2,7 @@ use tonic::{Request, Response, Status};
 use crate::freecode_pb::freecode_service_server::FreecodeService;
 use crate::freecode_pb::{
     AstEditRequest, AstEditResponse, IntentRequest, IntentResponse, PingRequest, PingResponse,
-    GitStatusRequest, GitStatusResponse,
+    GitStatusRequest, GitStatusResponse, ListModelsRequest, ListModelsResponse, ModelInfo,
 };
 use crate::llm::ChatMessage;
 use std::pin::Pin;
@@ -2314,6 +2314,28 @@ impl FreecodeService for FreecodeCore {
                 message: format!("Unsupported file type for AST-aware refactoring: {}", file_path),
             }))
         }
+    }
+
+    async fn list_models(
+        &self,
+        request: Request<ListModelsRequest>,
+    ) -> Result<Response<ListModelsResponse>, Status> {
+        let req = request.into_inner();
+        let endpoint = if req.llm_endpoint.trim().is_empty() {
+            "http://127.0.0.1:1234/v1/chat/completions"
+        } else {
+            req.llm_endpoint.trim()
+        };
+        Ok(Response::new(match crate::llm::list_models(endpoint).await {
+            Ok(models) => ListModelsResponse {
+                models: models
+                    .into_iter()
+                    .map(|m| ModelInfo { id: m.id, max_model_len: m.max_model_len, model_type: m.model_type })
+                    .collect(),
+                error: String::new(),
+            },
+            Err(error) => ListModelsResponse { models: vec![], error },
+        }))
     }
 
     async fn get_git_status(
