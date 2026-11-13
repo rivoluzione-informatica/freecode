@@ -19,12 +19,37 @@ pub const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(120);
 /// Total budget for a single non-streamed completion (T1 is small + greedy).
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// Environment variable holding the bearer token for an authenticated OpenAI-compatible backend
+/// (oMLX, LiteLLM, a remote vLLM). Unset or blank means no `Authorization` header is sent, which
+/// is what LM Studio and a loopback llama.cpp expect. Read from the daemon's environment only: a
+/// secret does not belong in `.freecode/config.json`, which lives inside the workspace.
+pub const API_KEY_ENV: &str = "FREECODE_LLM_API_KEY";
+
+/// `Authorization: Bearer <key>` as default headers for every request a client sends, or an empty
+/// map when there is no usable key. The value is marked sensitive so it never shows in debug
+/// output. A key that is not a valid header value is dropped rather than panicking the daemon.
+pub fn auth_headers(key: Option<&str>) -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(k) = key.map(str::trim).filter(|k| !k.is_empty()) {
+        if let Ok(mut v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {k}")) {
+            v.set_sensitive(true);
+            headers.insert(reqwest::header::AUTHORIZATION, v);
+        }
+    }
+    headers
+}
+
+fn env_auth_headers() -> reqwest::header::HeaderMap {
+    auth_headers(std::env::var(API_KEY_ENV).ok().as_deref())
+}
+
 /// Shared client for the STREAMING chat path: bounded connect, unbounded body
 /// (the stall timeout at the read site is what bounds it).
 pub fn streaming_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .pool_idle_timeout(Duration::from_secs(90))
+        .default_headers(env_auth_headers())
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }
@@ -34,6 +59,7 @@ pub fn blocking_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
+        .default_headers(env_auth_headers())
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }
@@ -219,6 +245,29 @@ pub fn assemble_tool_calls(fragments: &[ToolCallDelta]) -> Vec<ToolCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_headers_carry_a_bearer_token() {
+        let h = auth_headers(Some("sk-test"));
+        let v = h.get(reqwest::header::AUTHORIZATION).expect("Authorization header");
+        assert_eq!(v.to_str().unwrap(), "Bearer sk-test");
+        assert!(v.is_sensitive(), "the token must not appear in debug output");
+    }
+
+    #[test]
+    fn auth_headers_are_absent_without_a_usable_key() {
+        assert!(auth_headers(None).is_empty());
+        assert!(auth_headers(Some("")).is_empty());
+        assert!(auth_headers(Some("   ")).is_empty());
+        // A newline would make an invalid header value; it must be dropped, not panic.
+        assert!(auth_headers(Some("bad\nkey")).is_empty());
+    }
+
+    #[test]
+    fn auth_headers_trim_the_key() {
+        let h = auth_headers(Some("  k  \n"));
+        assert_eq!(h.get(reqwest::header::AUTHORIZATION).unwrap().to_str().unwrap(), "Bearer k");
+    }
 
     #[test]
     fn tool_message_round_trips() {

@@ -165,18 +165,24 @@ fn check_llm(chat_endpoint: &str) -> Check {
             "start a local OpenAI-compatible server (LM Studio, llama.cpp --server, Ollama) and load a model",
         );
     }
-    match http_get_models(&format!("{base}/v1/models")) {
-        Some(models) if !models.is_empty() => {
+    let key = std::env::var("FREECODE_LLM_API_KEY").ok();
+    match http_get_models(&format!("{base}/v1/models"), key.as_deref()) {
+        Err(ModelsError::Unauthorized) => Check::warn(
+            "llm endpoint",
+            format!("{hostport} answered 401 — it wants an API key"),
+            "export FREECODE_LLM_API_KEY=<key> in the daemon's environment, then restart the daemon",
+        ),
+        Ok(models) if !models.is_empty() => {
             let shown: Vec<&str> = models.iter().take(3).map(|s| s.as_str()).collect();
             let more = if models.len() > 3 { format!(" (+{} more)", models.len() - 3) } else { String::new() };
             Check::ok("llm endpoint", format!("{hostport} — {}{}", shown.join(", "), more))
         }
-        Some(_) => Check::warn(
+        Ok(_) => Check::warn(
             "llm endpoint",
             format!("{hostport} answers but exposes no models"),
             "load a model in your LLM server",
         ),
-        None => Check::warn(
+        Err(ModelsError::Unexpected) => Check::warn(
             "llm endpoint",
             format!("{hostport} is open but /v1/models did not answer as expected"),
             "confirm the server speaks the OpenAI API",
@@ -184,31 +190,57 @@ fn check_llm(chat_endpoint: &str) -> Check {
     }
 }
 
+/// Why `/v1/models` could not be read.
+enum ModelsError {
+    /// The server answered 401/403: it wants an API key.
+    Unauthorized,
+    /// Anything else we did not anticipate (not HTTP, not JSON, plain-HTTPS, ...).
+    Unexpected,
+}
+
 /// Minimal HTTP GET — no dependency added to the CLI for one request during one diagnostic.
-/// Returns the `data[].id` values, or None if anything about the exchange was unexpected.
-fn http_get_models(url: &str) -> Option<Vec<String>> {
+/// Returns the `data[].id` values. `api_key`, when set and free of CR/LF, goes out as a Bearer
+/// token, the same as the daemon sends it.
+fn http_get_models(url: &str, api_key: Option<&str>) -> Result<Vec<String>, ModelsError> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
 
-    let rest = url.strip_prefix("http://")?;
+    let rest = url.strip_prefix("http://").ok_or(ModelsError::Unexpected)?;
     let (hostport, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, "/"),
     };
-    let mut stream = TcpStream::connect(hostport).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
-    stream.set_write_timeout(Some(Duration::from_secs(3))).ok()?;
+    let mut stream = TcpStream::connect(hostport).map_err(|_| ModelsError::Unexpected)?;
+    let timeout = Some(Duration::from_secs(3));
+    stream.set_read_timeout(timeout).map_err(|_| ModelsError::Unexpected)?;
+    stream.set_write_timeout(timeout).map_err(|_| ModelsError::Unexpected)?;
+    let auth = match api_key.map(str::trim) {
+        Some(k) if !k.is_empty() && !k.contains(['\r', '\n']) => format!("Authorization: Bearer {k}\r\n"),
+        _ => String::new(),
+    };
     write!(
         stream,
-        "GET {path} HTTP/1.1\r\nHost: {hostport}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: {hostport}\r\nConnection: close\r\nAccept: application/json\r\n{auth}\r\n"
     )
-    .ok()?;
+    .map_err(|_| ModelsError::Unexpected)?;
     let mut body = String::new();
-    stream.read_to_string(&mut body).ok()?;
-    let json = body.split("\r\n\r\n").nth(1)?;
+    stream.read_to_string(&mut body).map_err(|_| ModelsError::Unexpected)?;
+    let status: u16 = body
+        .lines()
+        .next()
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|c| c.parse().ok())
+        .ok_or(ModelsError::Unexpected)?;
+    if status == 401 || status == 403 {
+        return Err(ModelsError::Unauthorized);
+    }
+    let json = body.split("\r\n\r\n").nth(1).ok_or(ModelsError::Unexpected)?;
+    Ok(parse_model_ids(json))
+}
 
-    // Pull out every `"id":"..."` — enough for a diagnostic, and it cannot panic on a shape
-    // we did not anticipate.
+/// Pull out every `"id":"..."` — enough for a diagnostic, and it cannot panic on a shape we did
+/// not anticipate.
+fn parse_model_ids(json: &str) -> Vec<String> {
     let mut ids = Vec::new();
     let mut rest = json;
     while let Some(i) = rest.find("\"id\"") {
@@ -221,7 +253,7 @@ fn http_get_models(url: &str) -> Option<Vec<String>> {
             }
         }
     }
-    Some(ids)
+    ids
 }
 
 fn check_docker() -> Check {
@@ -350,6 +382,49 @@ fn json_str(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A one-shot server that answers 200 with a model list only when the request carries the
+    /// expected bearer token, and 401 otherwise — the shape of oMLX with an API key set.
+    fn authed_models_server() -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for _ in 0..2 {
+                let Ok((mut sock, _)) = listener.accept() else { return };
+                // `write!` on a bare TcpStream can arrive in several segments: read to the blank
+                // line, not just once.
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 512];
+                while !raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match sock.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => raw.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let req = String::from_utf8_lossy(&raw);
+                let resp = if req.contains("Authorization: Bearer sekret\r\n") {
+                    let b = r#"{"data":[{"id":"m1"},{"id":"m2"}]}"#;
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{b}", b.len())
+                } else {
+                    let b = r#"{"error":"API key required"}"#;
+                    format!("HTTP/1.1 401 Unauthorized\r\nContent-Length: {}\r\n\r\n{b}", b.len())
+                };
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        format!("http://{addr}/v1/models")
+    }
+
+    #[test]
+    fn models_probe_reports_401_without_a_key_and_lists_models_with_one() {
+        let url = authed_models_server();
+        assert!(matches!(http_get_models(&url, None), Err(ModelsError::Unauthorized)));
+        match http_get_models(&url, Some("sekret")) {
+            Ok(ids) => assert_eq!(ids, vec!["m1", "m2"]),
+            Err(_) => panic!("expected the model list"),
+        }
+    }
+
     use super::*;
 
     #[test]

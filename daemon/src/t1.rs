@@ -277,7 +277,7 @@ async fn resolve_model(endpoint: &str, model: &str) -> String {
         return model.to_string();
     }
     let url = endpoint.replace("/v1/completions", "/v1/models");
-    if let Ok(r) = reqwest::get(&url).await {
+    if let Ok(r) = crate::llm::blocking_client().get(&url).send().await {
         if let Ok(v) = r.json::<serde_json::Value>().await {
             if let Some(arr) = v["data"].as_array() {
                 if let Some(id) = arr
